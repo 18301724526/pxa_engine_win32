@@ -1,0 +1,39 @@
+[package]
+name = "pxa_engine_win32"
+version = "0.1.0"
+edition = "2021" # 保持 2021 版本以确保兼容性
+
+[dependencies]
+winit = "0.28.7"
+pixels = "0.13.0"
+egui = "0.22.0"
+egui-winit = "0.22.0"
+egui-wgpu = "0.22.0"
+bytemuck = { version = "1.13", features = ["derive"] }
+rfd = "0.14"
+image = "0.24"
+rayon = "1.7"
+crc32fast = "1.3"
+thiserror = "1.0"
+anyhow = "1.0"
+serde_json = "1.0"
+chrono = "0.4"
+rust-i18n = "3"
+
+[build-dependencies]
+winres = "0.1"
+
+[package.metadata.packager]
+# 核心配置
+formats = ["nsis"] 
+before-packaging-command = "cargo build --release"
+product-name = "PXA PRO" # 应用显示名称
+publisher = "PXA_Studio" # 发布者名称
+version = "0.1.0"
+icons = ["assets/ico.ico"] # 图标路径
+
+[package.metadata.packager.nsis]
+# 修正：使用 currentUser 代替 perUser
+installer-mode = "currentUser" 
+# 支持简体中文安装界面
+languages = ["SimpChinese"]
