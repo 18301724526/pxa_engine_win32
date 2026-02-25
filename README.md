@@ -22,12 +22,13 @@ PXA Engine 是一个专注于像素艺术创作的轻量级工具，支持图层
 
 ### 构建步骤
 ```bash
-git clone https://github.com/你的用户名/pxa_engine_win32.git
+git clone https://github.com/18301724526/pxa_engine_win32.git
 cd pxa_engine_win32
 cargo build --release
-运行
-bash
+### 运行
+```bash
 cargo run --release
+```
 🎮 基本使用
 工具栏：左侧面板选择工具（铅笔、橡皮、填充等）
 
