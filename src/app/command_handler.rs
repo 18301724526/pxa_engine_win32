@@ -281,6 +281,22 @@ impl CommandHandler {
                     }
                 }
             }
+            AppCommand::CreateAnimation(name) => {
+                let id = crate::core::id_gen::gen_id();
+                let anim = crate::core::animation::timeline::Animation::new(name.clone(), 2.0); // 默认2秒
+                app_state.animation.project.animations.insert(id.clone(), anim);
+                app_state.animation.project.active_animation_id = Some(id);
+                app_state.animation.current_time = 0.0;
+                app_state.is_dirty = true;
+            }
+            AppCommand::SelectAnimation(id) => {
+                if app_state.animation.project.animations.contains_key(&id) {
+                    app_state.animation.project.active_animation_id = Some(id);
+                    app_state.animation.current_time = 0.0;
+                    crate::animation::controller::AnimationController::apply_current_pose(&mut app_state.animation);
+                    app_state.view.needs_full_redraw = true;
+                }
+            }
             _ => {}
         }
     }

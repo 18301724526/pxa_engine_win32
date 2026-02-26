@@ -46,4 +46,6 @@ pub enum AppCommand {
     SetLanguage(String),
     PenFill,
     PenStroke,
+    CreateAnimation(String),
+    SelectAnimation(String),
 }

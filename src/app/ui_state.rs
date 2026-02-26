@@ -19,6 +19,9 @@ pub struct UiState {
     pub active_select_tool: ToolType,
     pub show_canvas_menu: bool,
     pub canvas_menu_pos: egui::Pos2,
+    pub show_new_anim_modal: bool,
+    pub new_anim_name: String,
+    pub selected_keyframe: Option<(String, f32)>,
 }
 
 impl UiState {
@@ -41,6 +44,9 @@ impl UiState {
             active_select_tool: ToolType::RectSelect,
             show_canvas_menu: false,
             canvas_menu_pos: egui::Pos2::ZERO,
+            show_new_anim_modal: false,
+            new_anim_name: String::new(),
+            selected_keyframe: None,
         }
     }
 }

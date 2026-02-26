@@ -55,8 +55,13 @@ impl Timeline {
         };
 
         if match_type {
-            self.keyframes.push(Keyframe { time, value, curve });
-            self.keyframes.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+            if let Some(existing) = self.keyframes.iter_mut().find(|k| (k.time - time).abs() < 0.0001) {
+                existing.value = value;
+                existing.curve = curve;
+            } else {
+                self.keyframes.push(Keyframe { time, value, curve });
+                self.keyframes.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+            }
         }
     }
 

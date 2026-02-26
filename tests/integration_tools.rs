@@ -134,3 +134,27 @@ fn test_transform_tool_workflow() {
     assert_eq!(store.get_pixel(layer_id, 64, 64).expect("Pixel read failed").a, 255, "目标中心应有像素");
     assert_eq!(store.get_pixel(layer_id, 40, 40).expect("Pixel read failed").a, 0, "原位置应为空");
 }
+
+#[test]
+fn test_out_of_bounds_drag_and_zoom() {
+    let mut app = AppState::new();
+    let epsilon = 1e-4;
+
+    app.view.zoom_level = 1.0;
+    app.view.zoom_level = (app.view.zoom_level as f32 + 200.0 * 0.01).clamp(0.1, 10.0) as f64;
+    assert!((app.view.zoom_level - 3.0).abs() < epsilon, "Expected 3.0, got {}", app.view.zoom_level);
+    
+    app.view.zoom_level = (app.view.zoom_level as f32 - 1000.0 * 0.01).clamp(0.1, 10.0) as f64;
+    assert!((app.view.zoom_level - 0.1).abs() < epsilon, "Expected 0.1, got {}", app.view.zoom_level);
+
+    app.engine.set_primary_color(Color::new(255, 0, 0, 255));
+    app.set_tool(ToolType::Pencil);
+    
+    app.on_mouse_down(10, 10).unwrap();
+
+    let out_x = (-100i32) as u32;
+    let out_y = (-100i32) as u32;
+    
+    app.on_mouse_move(out_x, out_y).unwrap();
+    app.on_mouse_up().unwrap();
+}

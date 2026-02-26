@@ -1,6 +1,9 @@
 use pxa_engine_win32::app::state::{AppState, ToolType, AppMode};
 use pxa_engine_win32::core::animation::bone::BoneData;
 use pxa_engine_win32::core::animation::skeleton::Skeleton;
+use pxa_engine_win32::app::commands::AppCommand;
+use pxa_engine_win32::app::command_handler::CommandHandler;
+use pxa_engine_win32::core::animation::timeline::{TimelineProperty, KeyframeValue, CurveType, Timeline};
 
 fn simulate_create_bone(app: &mut AppState, start: (u32, u32), end: (u32, u32)) {
     app.set_tool(ToolType::CreateBone);
@@ -125,4 +128,50 @@ fn test_bone_selection_logic() {
 
     app.on_mouse_down(0, 0).unwrap();
     assert!(app.ui.selected_bone_id.is_none());
+}
+
+#[test]
+fn test_create_and_select_animation() {
+    let mut app = AppState::new();
+    app.mode = AppMode::Animation;
+
+    // 1. 创建动画1
+    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Idle".into()));
+    let idle_id = app.animation.project.active_animation_id.clone().unwrap();
+    assert_eq!(app.animation.project.animations.get(&idle_id).unwrap().name, "Idle");
+
+    // 2. 创建动画2
+    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Run".into()));
+    let run_id = app.animation.project.active_animation_id.clone().unwrap();
+    assert_ne!(idle_id, run_id);
+    assert_eq!(app.animation.project.animations.get(&run_id).unwrap().name, "Run");
+
+    // 3. 切换回动画1
+    CommandHandler::execute(&mut app, AppCommand::SelectAnimation(idle_id.clone()));
+    assert_eq!(app.animation.project.active_animation_id.unwrap(), idle_id);
+    assert_eq!(app.animation.current_time, 0.0);
+}
+
+#[test]
+fn test_keyframe_insertion_and_data_binding() {
+    let mut app = AppState::new();
+    app.mode = AppMode::Animation;
+
+    // 创建骨骼与动画
+    app.animation.project.skeleton.add_bone(BoneData::new("BoneA".into(), "Arm".into()));
+    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Attack".into()));
+    
+    let anim_id = app.animation.project.active_animation_id.clone().unwrap();
+    let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
+
+    // 模拟 K 帧行为
+    let mut tl = Timeline::new("BoneA".into(), TimelineProperty::Rotation);
+    tl.add_keyframe(1.5, KeyframeValue::Rotate(45.0), CurveType::Linear);
+    anim.timelines.push(tl);
+
+    // 验证数据正确性
+    let stored_anim = app.animation.project.animations.get(&anim_id).unwrap();
+    assert_eq!(stored_anim.timelines.len(), 1);
+    assert_eq!(stored_anim.timelines[0].keyframes[0].time, 1.5);
+    assert_eq!(stored_anim.timelines[0].keyframes[0].value, KeyframeValue::Rotate(45.0));
 }

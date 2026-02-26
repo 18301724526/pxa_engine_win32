@@ -90,57 +90,101 @@ impl Gui {
             TitleBar::show(ui, app);
         });
 
-        egui::SidePanel::left("toolbar").resizable(false).default_width(115.0).show(ctx, |ui| {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(10.0);                    
-                    match app.mode {
-                        AppMode::PixelEdit => ToolbarPixel::show(ui, app),
-                        AppMode::Animation => ToolbarAnim::show(ui, app),
-                    }
-                    ui.add_space(10.0);
-                    ui.label(format!("{}: {:.1}x", t!("toolbar.zoom"), app.view.zoom_level));
-                    ui.add(egui::Slider::new(&mut app.view.zoom_level, 01.0..=10.0).step_by(0.1).show_value(false));
+        if app.mode == AppMode::PixelEdit {
+            egui::SidePanel::left("toolbar_pixel").resizable(false).default_width(115.0).show(ctx, |ui| {
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(10.0);                    
+                        ToolbarPixel::show(ui, app);
+                        ui.add_space(10.0);
+                        ui.label(format!("{}: {:.1}x", t!("toolbar.zoom"), app.view.zoom_level));
+                        ui.add(egui::Slider::new(&mut app.view.zoom_level, 0.1..=10.0).step_by(0.1).show_value(false));
+                    });
                 });
             });
-        });
+            egui::SidePanel::right("layer_panel").default_width(180.0).show(ctx, |ui| {
+                LayerPanel::show(ui, app);
+            });
 
-        egui::SidePanel::right("layer_panel").default_width(180.0).show(ctx, |ui| {
-            LayerPanel::show(ui, app);
-        });
-
-        if app.mode == AppMode::Animation {
+        } else if app.mode == AppMode::Animation {
+            egui::SidePanel::right("hierarchy_panel").default_width(220.0).show(ctx, |ui| {
+                LayerPanel::show(ui, app);
+            });
             egui::TopBottomPanel::bottom("timeline_panel")
                 .resizable(true)
-                .default_height(150.0)
+                .default_height(200.0)
                 .show(ctx, |ui| {
-                    ui.vertical(|ui| {
-                        TimelinePanel::show(ui, app);
-                        
-                        ui.separator();
-                        
-                        egui::Frame::none()
-                            .fill(egui::Color32::from_rgb(30, 30, 30))
-                            .show(ui, |ui| {
-                                crate::ui::bone_transform_panel::BoneTransformPanel::show(ui, app);
-                            });
-                    });
+                    TimelinePanel::show(ui, app);
+                });
+
+            egui::Window::new("Anim Tools")
+                .title_bar(false).resizable(false).collapsible(false)
+                .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(10.0, -10.0))
+                .show(ctx, |ui| {
+                    ToolbarAnim::show(ui, app);
+                });
+
+            egui::Window::new("Transform Panel")
+                .title_bar(false).resizable(false).collapsible(false)
+                .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -10.0))
+                .show(ctx, |ui| {
+                    crate::ui::bone_transform_panel::BoneTransformPanel::show(ui, app);
                 });
         }
 
-        if app.mode == AppMode::PixelEdit {
-            if ctx.input(|i| i.pointer.secondary_released()) {
-                if !ctx.is_pointer_over_area() {
-                    if app.engine.store().selection.is_active {
-                        if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                            app.ui.canvas_menu_pos = pos;
-                            app.ui.show_canvas_menu = true;
-                        }
+        egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+            let response = ui.allocate_response(ui.available_size(), egui::Sense::click_and_drag());
+            
+            let scale = ctx.pixels_per_point();
+            let zoom = app.view.zoom_level as f32;
+            let s_cx = app.view.width / 2.0;
+            let s_cy = app.view.height / 2.0;
+            let c_cx = app.engine.store().canvas_width as f32 / 2.0;
+            let c_cy = app.engine.store().canvas_height as f32 / 2.0;
+            let pan_x = app.view.pan_x;
+            let pan_y = app.view.pan_y;
+
+            let get_canvas_pos = |pos: egui::Pos2| -> (u32, u32) {
+                let phys_x = pos.x * scale;
+                let phys_y = pos.y * scale;
+                let cx = (phys_x - s_cx) / zoom + c_cx - pan_x;
+                let cy = (phys_y - s_cy) / zoom + c_cy - pan_y;
+                (cx.floor() as i32 as u32, cy.floor() as i32 as u32)
+            };
+
+            if response.drag_started() {
+                if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                    let (cx, cy) = get_canvas_pos(pos);
+                    let _ = app.on_mouse_down(cx, cy);
+                }
+            }
+
+            if response.dragged() {
+                if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                    let (cx, cy) = get_canvas_pos(pos);
+                    let _ = app.on_mouse_move(cx, cy);
+                }
+            } else if response.hovered() {
+                if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
+                    let (cx, cy) = get_canvas_pos(pos);
+                    let _ = app.on_mouse_move(cx, cy);
+                }
+            }
+
+            if response.drag_released() || (response.hovered() && ctx.input(|i| i.pointer.any_released() && !i.pointer.any_down())) {
+                let _ = app.on_mouse_up();
+            }
+
+            if app.mode == AppMode::PixelEdit && response.secondary_clicked() {
+                if app.engine.store().selection.is_active {
+                    if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                        app.ui.canvas_menu_pos = pos;
+                        app.ui.show_canvas_menu = true;
                     }
                 }
             }
 
-            if app.ui.show_canvas_menu {
+            if app.ui.show_canvas_menu && app.mode == AppMode::PixelEdit {
                 let area_response = egui::Area::new("canvas_context_menu")
                     .fixed_pos(app.ui.canvas_menu_pos)
                     .order(egui::Order::Foreground)
@@ -174,7 +218,12 @@ impl Gui {
                     }
                 }
             }
-        }
+            let scroll = ui.input(|i| i.scroll_delta.y);
+            if scroll != 0.0 {
+                app.view.zoom_level = (app.view.zoom_level as f32 + scroll * 0.005).clamp(0.1, 10.0) as f64;
+                app.view.needs_full_redraw = true;
+            }
+        });
 
         if app.ui.show_exit_modal {
             egui::Window::new(t!("dialog.unsaved_title"))

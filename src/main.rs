@@ -11,7 +11,7 @@ use pxa_engine_win32::app::state::AppMode;
 
 
 use winit::{
-    event::{ElementState, Event, MouseButton, WindowEvent, MouseScrollDelta},
+    event::{ElementState, Event, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
     dpi::LogicalSize,
@@ -172,7 +172,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 let _ = framework.handle_event(&event);
-                let ui_wants_input = framework.egui_ctx.wants_pointer_input();
 
                 match event {
                     WindowEvent::Resized(size) => {
@@ -203,16 +202,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                         framework.scale_factor(scale_factor as f32);
                     }
-                    WindowEvent::MouseWheel { delta, .. } => {
-                        if !ui_wants_input {
-                            let scroll = match delta {
-                                MouseScrollDelta::LineDelta(_, y) => y * 0.5,
-                                MouseScrollDelta::PixelDelta(pos) => (pos.y / 10.0) as f32,
-                            };
-                            let new_zoom = (app_state.view.zoom_level as f32 + scroll).clamp(1.0, 10.0);
-                            app_state.view.zoom_level = new_zoom as f64;
-                        }
-                    }
                     WindowEvent::CursorMoved { position, .. } => {
                         let dx = (cursor_pos.0 - last_cursor_pos.0) as f32;
                         let dy = (cursor_pos.1 - last_cursor_pos.1) as f32;
@@ -220,34 +209,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if app_state.is_space_pressed && is_mouse_down {
                             let zoom = app_state.view.zoom_level as f32;
                             app_state.view.pan_x += dx / zoom;
-                            app_state.view.pan_y += dy / zoom;
-                        } else if !ui_wants_input && !app_state.is_space_pressed && current_resize_dir.is_none() {
-                            if let Some((px, py)) = app_state.view.screen_to_canvas(app_state.engine.store(), cursor_pos.0 as f32, cursor_pos.1 as f32) {
-                                if let Err(e) = app_state.on_mouse_move(px as u32, py as u32) {
-                                    app_state.ui.error_message = Some(t!("error.tool_move_failed", err = e.to_string()).to_string());
-                                }
-                            }
+                            app_state.view.pan_y += dy / zoom;                        
                         }
                     }
                     WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                         is_mouse_down = state == ElementState::Pressed;
-                        if !ui_wants_input && !app_state.is_space_pressed && current_resize_dir.is_none() {
-                            if let Some((px, py)) = app_state.view.screen_to_canvas(app_state.engine.store(), cursor_pos.0 as f32, cursor_pos.1 as f32) {
-                                if state == ElementState::Pressed {
-                                    if let Err(e) = app_state.on_mouse_down(px as u32, py as u32) {
-                                        app_state.ui.error_message = Some(t!("error.tool_down_failed", err = e.to_string()).to_string());
-                                    }
-                                } else {
-                                    if let Err(e) = app_state.on_mouse_up() {
-                                        app_state.ui.error_message = Some(t!("error.tool_up_failed", err = e.to_string()).to_string());
-                                    }
-                                }
-                            }
-                        } else if state == ElementState::Released {
-                            if let Err(e) = app_state.on_mouse_up() {
-                                app_state.ui.error_message = Some(t!("error.tool_up_failed", err = e.to_string()).to_string());
-                            }
-                        }
                     }
                     _ => {}
                 }

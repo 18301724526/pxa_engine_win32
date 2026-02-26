@@ -29,6 +29,8 @@ pub struct AnimationState {
     pub is_playing: bool,
     pub playback_speed: f32,
     pub create_bone_tool: crate::tools::create_bone::CreateBoneTool,
+    pub auto_key_enabled: bool,
+    pub is_looping: bool,
 }
 
 impl AnimationState {
@@ -39,10 +41,45 @@ impl AnimationState {
             is_playing: false,
             playback_speed: 1.0,
             create_bone_tool: crate::tools::create_bone::CreateBoneTool::new(),
+            auto_key_enabled: false,
+            is_looping: true,
         }
     }
     
-    pub fn init_demo_data(&mut self) {
+    pub fn auto_key_bone(&mut self, bone_id: &str, property: crate::core::animation::timeline::TimelineProperty) {
+        if !self.auto_key_enabled { return; }
+        let time = self.current_time;
+        let active_id = match &self.project.active_animation_id {
+            Some(id) => id.clone(),
+            None => return,
+        };
+        
+        let transform = match self.project.skeleton.bones.iter().find(|b| b.data.id == bone_id) {
+            Some(b) => b.local_transform,
+            None => return,
+        };
+        
+        if let Some(anim) = self.project.animations.get_mut(&active_id) {
+            let mut tl_idx = anim.timelines.iter().position(|t| t.target_id == bone_id && t.property == property);
+            if tl_idx.is_none() {
+                anim.timelines.push(crate::core::animation::timeline::Timeline::new(bone_id.to_string(), property.clone()));
+                tl_idx = Some(anim.timelines.len() - 1);
+            }
+            
+            if let Some(idx) = tl_idx {
+                let timeline = &mut anim.timelines[idx];
+                use crate::core::animation::timeline::{KeyframeValue, CurveType};
+                match property {
+                    crate::core::animation::timeline::TimelineProperty::Rotation => 
+                        timeline.add_keyframe(time, KeyframeValue::Rotate(transform.rotation), CurveType::Linear),
+                    crate::core::animation::timeline::TimelineProperty::Translation => 
+                        timeline.add_keyframe(time, KeyframeValue::Translate(transform.x, transform.y), CurveType::Linear),
+                    crate::core::animation::timeline::TimelineProperty::Scale => 
+                        timeline.add_keyframe(time, KeyframeValue::Scale(transform.scale_x, transform.scale_y), CurveType::Linear),
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
@@ -131,8 +168,8 @@ impl AppState {
 
     pub fn on_mouse_move(&mut self, x: u32, y: u32) -> Result<(), CoreError> {
         let last_pos = self.last_mouse_pos.unwrap_or((x, y));
-        let dx = x as f32 - last_pos.0 as f32;
-        let dy = y as f32 - last_pos.1 as f32; 
+        let dx = (x as i32).wrapping_sub(last_pos.0 as i32) as f32;
+        let dy = (y as i32).wrapping_sub(last_pos.1 as i32) as f32;
         self.last_mouse_pos = Some((x, y));
         if self.mode == AppMode::Animation {
             if self.engine.tool_manager().is_drawing {
@@ -178,6 +215,15 @@ impl AppState {
                             self.is_dirty = true;
                             self.view.needs_full_redraw = true;
                             skeleton.update();
+
+                            let prop = match tool {
+                                ToolType::BoneRotate => Some(crate::core::animation::timeline::TimelineProperty::Rotation),
+                                ToolType::BoneTranslate => Some(crate::core::animation::timeline::TimelineProperty::Translation),
+                                _ => None,
+                            };
+                            if let Some(p) = prop {
+                                self.animation.auto_key_bone(bone_id, p);
+                            }
                         }
                     }
                 }
@@ -240,7 +286,10 @@ impl AppState {
         for bone in &self.animation.project.skeleton.bones {
             let bx = bone.world_matrix[4];
             let by = bone.world_matrix[5];
-            if ((x as f32 - bx).powi(2) + (y as f32 - by).powi(2)).sqrt() < 10.0 {
+            let fx = x as i32 as f32;
+            let fy = y as i32 as f32;
+            
+            if ((fx - bx).powi(2) + (fy - by).powi(2)).sqrt() < 10.0 {
                 clicked_bone_id = Some(bone.data.id.clone());
                 break;
             }

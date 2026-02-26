@@ -6,7 +6,6 @@ pub struct AnimationController;
 impl AnimationController {
     pub fn update(state: &mut AnimationState, delta: Duration) {
         if !state.is_playing {
-            Self::apply_current_pose(state);
             return;
         }
 
