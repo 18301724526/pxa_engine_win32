@@ -4,7 +4,7 @@ use egui::{FontData, FontDefinitions, FontFamily};
 use crate::ui::title_bar::TitleBar;
 use crate::app::commands::AppCommand;
 use crate::ui::layer_panel::LayerPanel;
-use crate::ui::timeline_panel::TimelinePanel;
+use crate::ui::timeline::TimelinePanel;
 use crate::ui::toolbar_pixel::ToolbarPixel;
 use crate::ui::toolbar_anim::ToolbarAnim;
 use rust_i18n::t;
@@ -111,8 +111,8 @@ impl Gui {
                 LayerPanel::show(ui, app);
             });
             egui::TopBottomPanel::bottom("timeline_panel")
-                .resizable(true)
-                .default_height(200.0)
+                .resizable(false)
+                .default_height(250.0)
                 .show(ctx, |ui| {
                     TimelinePanel::show(ui, app);
                 });
@@ -218,10 +218,12 @@ impl Gui {
                     }
                 }
             }
-            let scroll = ui.input(|i| i.scroll_delta.y);
-            if scroll != 0.0 {
-                app.view.zoom_level = (app.view.zoom_level as f32 + scroll * 0.005).clamp(0.1, 10.0) as f64;
-                app.view.needs_full_redraw = true;
+            if response.hovered() {
+                let scroll = ui.input(|i| i.scroll_delta.y);
+                if scroll != 0.0 {
+                    app.view.zoom_level = (app.view.zoom_level as f32 + scroll * 0.005).clamp(0.1, 10.0) as f64;
+                    app.view.needs_full_redraw = true;
+                }
             }
         });
 

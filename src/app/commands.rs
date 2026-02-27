@@ -1,5 +1,6 @@
 use crate::core::color::Color;
 use crate::core::blend_mode::BlendMode;
+use crate::core::animation::timeline::{TimelineProperty, CurveType};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeAnchor {
     TopLeft,    TopCenter,    TopRight,
@@ -48,4 +49,8 @@ pub enum AppCommand {
     PenStroke,
     CreateAnimation(String),
     SelectAnimation(String),
+    DeleteKeyframe(String, Option<TimelineProperty>, f32),
+    UpdateKeyframeCurve(String, TimelineProperty, f32, CurveType),
+    MoveSelectedKeyframes(f32),
+    ApplySpineOffset { mode: usize, fixed_frames: i32, step_frames: i32 },
 }

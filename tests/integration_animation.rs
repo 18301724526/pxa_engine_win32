@@ -4,6 +4,8 @@ use pxa_engine_win32::core::animation::skeleton::Skeleton;
 use pxa_engine_win32::app::commands::AppCommand;
 use pxa_engine_win32::app::command_handler::CommandHandler;
 use pxa_engine_win32::core::animation::timeline::{TimelineProperty, KeyframeValue, CurveType, Timeline};
+use pxa_engine_win32::ui::timeline::TimelinePanel;
+use egui::{Context, RawInput, Event, pos2, PointerButton};
 
 fn simulate_create_bone(app: &mut AppState, start: (u32, u32), end: (u32, u32)) {
     app.set_tool(ToolType::CreateBone);
@@ -135,18 +137,15 @@ fn test_create_and_select_animation() {
     let mut app = AppState::new();
     app.mode = AppMode::Animation;
 
-    // 1. 创建动画1
     CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Idle".into()));
     let idle_id = app.animation.project.active_animation_id.clone().unwrap();
     assert_eq!(app.animation.project.animations.get(&idle_id).unwrap().name, "Idle");
 
-    // 2. 创建动画2
     CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Run".into()));
     let run_id = app.animation.project.active_animation_id.clone().unwrap();
     assert_ne!(idle_id, run_id);
     assert_eq!(app.animation.project.animations.get(&run_id).unwrap().name, "Run");
 
-    // 3. 切换回动画1
     CommandHandler::execute(&mut app, AppCommand::SelectAnimation(idle_id.clone()));
     assert_eq!(app.animation.project.active_animation_id.unwrap(), idle_id);
     assert_eq!(app.animation.current_time, 0.0);
@@ -157,21 +156,177 @@ fn test_keyframe_insertion_and_data_binding() {
     let mut app = AppState::new();
     app.mode = AppMode::Animation;
 
-    // 创建骨骼与动画
     app.animation.project.skeleton.add_bone(BoneData::new("BoneA".into(), "Arm".into()));
     CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Attack".into()));
     
     let anim_id = app.animation.project.active_animation_id.clone().unwrap();
     let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
 
-    // 模拟 K 帧行为
     let mut tl = Timeline::new("BoneA".into(), TimelineProperty::Rotation);
     tl.add_keyframe(1.5, KeyframeValue::Rotate(45.0), CurveType::Linear);
     anim.timelines.push(tl);
 
-    // 验证数据正确性
     let stored_anim = app.animation.project.animations.get(&anim_id).unwrap();
     assert_eq!(stored_anim.timelines.len(), 1);
     assert_eq!(stored_anim.timelines[0].keyframes[0].time, 1.5);
     assert_eq!(stored_anim.timelines[0].keyframes[0].value, KeyframeValue::Rotate(45.0));
+}
+
+#[test]
+fn test_multi_keyframe_drag_and_box_select() {
+    let mut app = AppState::new();
+    app.mode = AppMode::Animation;
+
+    app.animation.project.skeleton.add_bone(BoneData::new("BoneA".into(), "Arm".into()));
+    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Run".into()));
+    
+    let anim_id = app.animation.project.active_animation_id.clone().unwrap();
+    {
+        let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
+        let mut tl = Timeline::new("BoneA".into(), TimelineProperty::Rotation);
+        tl.add_keyframe(1.0, KeyframeValue::Rotate(10.0), CurveType::Linear);
+        tl.add_keyframe(2.0, KeyframeValue::Rotate(20.0), CurveType::Linear);
+        anim.timelines.push(tl);
+    }
+
+    app.ui.selected_keyframes = vec![
+        ("BoneA".into(), Some(TimelineProperty::Rotation), 1.0),
+        ("BoneA".into(), Some(TimelineProperty::Rotation), 2.0),
+    ];
+
+    CommandHandler::execute(&mut app, AppCommand::MoveSelectedKeyframes(0.5));
+
+    let anim = app.animation.project.animations.get(&anim_id).unwrap();
+    assert!((anim.timelines[0].keyframes[0].time - 1.5).abs() < 0.001, "Frame 1 should be 1.5");
+    assert!((anim.timelines[0].keyframes[1].time - 2.5).abs() < 0.001, "Frame 2 should be 2.5");
+}
+
+#[test]
+fn test_timeline_box_select_ui_logic() {
+    let mut app = AppState::new();
+    app.mode = AppMode::Animation;
+
+    app.animation.project.skeleton.add_bone(BoneData::new("B1".into(), "B1".into()));
+    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Anim1".into()));
+    let anim_id = app.animation.project.active_animation_id.clone().unwrap();
+    
+    {
+        let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
+        let mut tl = Timeline::new("B1".into(), TimelineProperty::Rotation);
+        tl.add_keyframe(1.0, KeyframeValue::Rotate(90.0), CurveType::Linear);
+        anim.timelines.push(tl);
+    }
+    app.ui.expanded_timeline_bones.insert("B1".into());
+
+    let ctx = Context::default();
+
+    let mut input1 = RawInput::default();
+    input1.events.push(Event::PointerMoved(pos2(200.0, 105.0)));
+    input1.events.push(Event::PointerButton { 
+        pos: pos2(200.0, 105.0), button: PointerButton::Primary, pressed: true, modifiers: Default::default()
+    });
+    ctx.begin_frame(input1);
+    egui::CentralPanel::default().show(&ctx, |ui| { TimelinePanel::show(ui, &mut app); });
+    let _ = ctx.end_frame();
+    println!("[TEST] After Frame 1 - box_select_start: {:?}", app.ui.box_select_start);
+
+    let mut input2 = RawInput::default();
+    input2.events.push(Event::PointerMoved(pos2(600.0, 200.0)));
+    ctx.begin_frame(input2);
+    egui::CentralPanel::default().show(&ctx, |ui| { TimelinePanel::show(ui, &mut app); });
+    let _ = ctx.end_frame();
+    println!("[TEST] After Frame 2 - box_select_start: {:?}", app.ui.box_select_start);
+
+    let mut input3 = RawInput::default();
+    input3.events.push(Event::PointerButton { 
+        pos: pos2(600.0, 200.0), button: PointerButton::Primary, pressed: false, modifiers: Default::default()
+    });
+    ctx.begin_frame(input3);
+    egui::CentralPanel::default().show(&ctx, |ui| { TimelinePanel::show(ui, &mut app); });
+    let _ = ctx.end_frame();
+    println!("[TEST] After Frame 3 - selected_keyframes count: {}", app.ui.selected_keyframes.len());
+
+    assert!(!app.ui.selected_keyframes.is_empty(), "UI 框选失败！没有任何关键帧被选中，证实了渲染层阻挡或结算周期滞后的 BUG。");
+}
+
+#[test]
+fn test_spine_cyclic_offset_logic() {
+    let mut app = AppState::new();
+    app.mode = AppMode::Animation;
+
+    app.animation.project.skeleton.add_bone(BoneData::new("B1".into(), "B1".into()));
+    app.animation.project.skeleton.add_bone(BoneData::new("B2".into(), "B2".into()));
+    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Run".into()));
+    
+    let anim_id = app.animation.project.active_animation_id.clone().unwrap();
+    {
+        let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
+        anim.duration = 2.0;
+
+        let mut tl1 = Timeline::new("B1".into(), TimelineProperty::Rotation);
+        tl1.add_keyframe(1.8, KeyframeValue::Rotate(10.0), CurveType::Linear);
+        anim.timelines.push(tl1);
+
+        let mut tl2 = Timeline::new("B2".into(), TimelineProperty::Rotation);
+        tl2.add_keyframe(1.8, KeyframeValue::Rotate(20.0), CurveType::Linear);
+        anim.timelines.push(tl2);
+    }
+
+    app.ui.selected_keyframes = vec![
+        ("B1".into(), Some(TimelineProperty::Rotation), 1.8),
+        ("B2".into(), Some(TimelineProperty::Rotation), 1.8),
+    ];
+
+    CommandHandler::execute(&mut app, AppCommand::ApplySpineOffset { mode: 1, fixed_frames: 15, step_frames: 1 });
+
+    let anim = app.animation.project.animations.get(&anim_id).unwrap();
+
+    assert_eq!(anim.duration, 2.0, "Spine Offset 绝不能改变动画总时长！");
+
+    let b1_time = anim.timelines[0].keyframes[0].time;
+    assert!((b1_time - 0.3).abs() < 0.001, "B1 没有正确循环折返！计算结果为: {}", b1_time);
+
+    let b2_time = anim.timelines[1].keyframes[0].time;
+    assert!((b2_time - 0.3333).abs() < 0.001, "B2 递增错位或折返失败！计算结果为: {}", b2_time);
+}
+
+#[test]
+fn test_animation_history_performance() {
+    let mut app = AppState::new();
+    app.mode = AppMode::Animation;
+
+    for i in 0..100 {
+        app.animation.project.skeleton.add_bone(BoneData::new(format!("Bone{}", i), format!("Bone{}", i)));
+    }
+    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("HeavyAnim".into()));
+    let anim_id = app.animation.project.active_animation_id.clone().unwrap();
+
+    {
+        let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
+        for i in 0..100 {
+            let mut tl = Timeline::new(format!("Bone{}", i), TimelineProperty::Rotation);
+            for f in 0..100 {
+                tl.add_keyframe(f as f32 * 0.1, KeyframeValue::Rotate(f as f32), CurveType::Linear);
+            }
+            anim.timelines.push(tl);
+        }
+    }
+
+    let start_commit = std::time::Instant::now();
+    for _ in 0..100 {
+        app.ui.selected_keyframes = vec![("Bone0".into(), Some(TimelineProperty::Rotation), 0.0)];
+        CommandHandler::execute(&mut app, AppCommand::MoveSelectedKeyframes(0.1));
+    }
+    let elapsed_commit = start_commit.elapsed();
+
+    let start_undo = std::time::Instant::now();
+    for _ in 0..100 {
+        CommandHandler::execute(&mut app, AppCommand::Undo);
+    }
+    let elapsed_undo = start_undo.elapsed();
+
+    println!("100次 Commit 耗时: {:?}, 100次 Undo 耗时: {:?}", elapsed_commit, elapsed_undo);
+
+    assert!(elapsed_commit.as_millis() < 50, "History commit 性能严重不达标!");
+    assert!(elapsed_undo.as_millis() < 50, "History undo 性能严重不达标!");
 }

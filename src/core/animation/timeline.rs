@@ -4,6 +4,7 @@ use crate::core::color::Color;
 pub enum CurveType {
     Linear,
     Stepped,
+    Bezier(f32, f32, f32, f32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,7 +100,34 @@ impl Timeline {
                 let t = (time - start.time) / duration;
                 Self::lerp_value(&start.value, &end.value, t)
             }
+            CurveType::Bezier(cx1, cy1, cx2, cy2) => {
+                let duration = end.time - start.time;
+                if duration <= 0.0001 {
+                    return Some(start.value.clone());
+                }
+                let t = (time - start.time) / duration;
+                let eased_t = Self::solve_bezier_y(cx1, cy1, cx2, cy2, t);
+                Self::lerp_value(&start.value, &end.value, eased_t)
+            }
         }
+    }
+
+    pub fn solve_bezier_y(cx1: f32, cy1: f32, cx2: f32, cy2: f32, t: f32) -> f32 {
+        if t <= 0.0 { return 0.0; }
+        if t >= 1.0 { return 1.0; }
+        
+        let mut min_u = 0.0;
+        let mut max_u = 1.0;
+        let mut u = t;
+        
+        for _ in 0..10 { 
+            let x = 3.0 * (1.0 - u).powi(2) * u * cx1 + 3.0 * (1.0 - u) * u.powi(2) * cx2 + u.powi(3);
+            if (x - t).abs() < 0.001 { break; }
+            if x < t { min_u = u; } else { max_u = u; }
+            u = (min_u + max_u) / 2.0;
+        }
+        
+        3.0 * (1.0 - u).powi(2) * u * cy1 + 3.0 * (1.0 - u) * u.powi(2) * cy2 + u.powi(3)
     }
 
     fn lerp_value(v1: &KeyframeValue, v2: &KeyframeValue, t: f32) -> Option<KeyframeValue> {
@@ -150,6 +178,18 @@ impl Animation {
             duration,
             timelines: Vec::new(),
         }
+    }
+
+    pub fn recalculate_duration(&mut self) {
+        let mut max_time = 0.0_f32;
+        for tl in &self.timelines {
+            for kf in &tl.keyframes {
+                if kf.time > max_time {
+                    max_time = kf.time;
+                }
+            }
+        }
+        self.duration = max_time;
     }
     
     pub fn apply(&self, skeleton: &mut super::skeleton::Skeleton, time: f32) {

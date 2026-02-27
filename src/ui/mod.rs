@@ -8,7 +8,7 @@ pub mod menu_image;
 pub mod window_controls;
 pub mod palette_panel;
 pub mod layer_panel;
-pub mod timeline_panel;
+pub mod timeline;
 pub mod toolbar_pixel;
 pub mod toolbar_anim;
 pub mod bone_transform_panel;

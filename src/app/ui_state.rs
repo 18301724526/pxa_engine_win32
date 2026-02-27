@@ -1,5 +1,6 @@
 use crate::app::commands::ResizeAnchor;
 use crate::app::state::ToolType;
+use std::collections::HashSet;
 
 pub struct UiState {
     pub renaming_layer_id: Option<String>,
@@ -21,7 +22,17 @@ pub struct UiState {
     pub canvas_menu_pos: egui::Pos2,
     pub show_new_anim_modal: bool,
     pub new_anim_name: String,
-    pub selected_keyframe: Option<(String, f32)>,
+    pub selected_keyframes: Vec<(String, Option<crate::core::animation::timeline::TimelineProperty>, f32)>,
+    pub box_select_start: Option<egui::Pos2>,
+    pub expanded_timeline_bones: HashSet<String>,
+    pub show_curve_editor: bool,
+    pub graph_pan: egui::Vec2,
+    pub graph_zoom: egui::Vec2,
+    pub timeline_zoom: f32,
+    pub show_offset_modal: bool,
+    pub offset_fixed_frames: i32,
+    pub offset_step_frames: i32,
+    pub offset_mode: usize,
 }
 
 impl UiState {
@@ -46,7 +57,17 @@ impl UiState {
             canvas_menu_pos: egui::Pos2::ZERO,
             show_new_anim_modal: false,
             new_anim_name: String::new(),
-            selected_keyframe: None,
+            selected_keyframes: Vec::new(),
+            box_select_start: None,
+            expanded_timeline_bones: HashSet::new(),
+            show_curve_editor: false,
+            graph_pan: egui::vec2(20.0, 0.0),
+            graph_zoom: egui::vec2(100.0, 1.0),
+            timeline_zoom: 1.0,
+            show_offset_modal: false,
+            offset_fixed_frames: 5,
+            offset_step_frames: 1,
+            offset_mode: 0,
         }
     }
 }

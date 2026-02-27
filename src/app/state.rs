@@ -23,8 +23,69 @@ pub enum AppMode {
     Animation,
 }
 
+#[derive(Clone)]
+pub enum AnimPatch {
+    Timeline { anim_id: String, bone_id: String, prop: crate::core::animation::timeline::TimelineProperty, old: Option<crate::core::animation::timeline::Timeline>, new: Option<crate::core::animation::timeline::Timeline> },
+    Skeleton { old: crate::core::animation::skeleton::Skeleton, new: crate::core::animation::skeleton::Skeleton },
+    Composite(Vec<AnimPatch>),
+}
+
+pub struct AnimHistory {
+    pub undo_stack: Vec<AnimPatch>,
+    pub redo_stack: Vec<AnimPatch>,
+}
+
+impl AnimHistory {
+    pub fn new() -> Self { Self { undo_stack: Vec::new(), redo_stack: Vec::new() } }
+    pub fn commit(&mut self, patch: AnimPatch) {
+        self.undo_stack.push(patch);
+        self.redo_stack.clear();
+    }
+    pub fn undo(&mut self, project: &mut AnimProject) -> bool {
+        if let Some(patch) = self.undo_stack.pop() {
+            self.apply_patch(project, &patch, true);
+            self.redo_stack.push(patch);
+            true
+        } else { false }
+    }
+    pub fn redo(&mut self, project: &mut AnimProject) -> bool {
+        if let Some(patch) = self.redo_stack.pop() {
+            self.apply_patch(project, &patch, false);
+            self.undo_stack.push(patch);
+            true
+        } else { false }
+    }
+    fn apply_patch(&self, project: &mut AnimProject, patch: &AnimPatch, is_undo: bool) {
+        match patch {
+            AnimPatch::Timeline { anim_id, bone_id, prop, old, new } => {
+                if let Some(anim) = project.animations.get_mut(anim_id) {
+                    let target = if is_undo { old } else { new };
+                    if let Some(tl) = target {
+                        if let Some(existing) = anim.timelines.iter_mut().find(|t| &t.target_id == bone_id && &t.property == prop) {
+                            *existing = tl.clone();
+                        } else {
+                            anim.timelines.push(tl.clone());
+                        }
+                    } else {
+                        anim.timelines.retain(|t| !(&t.target_id == bone_id && &t.property == prop));
+                    }
+                    anim.recalculate_duration();
+                }
+            }
+            AnimPatch::Skeleton { old, new } => { project.skeleton = if is_undo { old.clone() } else { new.clone() }; }
+            AnimPatch::Composite(patches) => {
+                let iter: Box<dyn Iterator<Item = &AnimPatch>> = if is_undo { Box::new(patches.iter().rev()) } else { Box::new(patches.iter()) };
+                for p in iter { self.apply_patch(project, p, is_undo); }
+            }
+        }
+    }
+}
+
 pub struct AnimationState {
     pub project: AnimProject,
+    pub history: AnimHistory,
+    pub drag_start_skeleton: Option<crate::core::animation::skeleton::Skeleton>,
+    pub drag_start_animation: Option<crate::core::animation::timeline::Animation>,
     pub current_time: f32,
     pub is_playing: bool,
     pub playback_speed: f32,
@@ -37,6 +98,9 @@ impl AnimationState {
     pub fn new() -> Self {
         Self {
             project: AnimProject::new(),
+            history: AnimHistory::new(),
+            drag_start_skeleton: None,
+            drag_start_animation: None,
             current_time: 0.0,
             is_playing: false,
             playback_speed: 1.0,
@@ -79,6 +143,7 @@ impl AnimationState {
                     _ => {}
                 }
             }
+            anim.recalculate_duration();
         }
     }
 }
@@ -138,6 +203,13 @@ impl AppState {
         if self.mode == AppMode::Animation {
             self.engine.tool_manager_mut().is_drawing = true;
             self.last_mouse_pos = Some((x, y));
+
+            self.animation.drag_start_skeleton = Some(self.animation.project.skeleton.clone());
+            if let Some(id) = &self.animation.project.active_animation_id {
+                if let Some(anim) = self.animation.project.animations.get(id) {
+                    self.animation.drag_start_animation = Some(anim.clone());
+                }
+            }
             if let Some(tool) = self.engine.tool_manager_mut().tools.get_mut(&ToolType::CreateBone) {
                 if let Some(bone_tool) = tool.as_any_mut().downcast_mut::<crate::tools::create_bone::CreateBoneTool>() {
                     bone_tool.parent_bone_id = self.ui.selected_bone_id.clone();
@@ -251,6 +323,28 @@ impl AppState {
         
         if self.mode == AppMode::Animation {
             self.engine.tool_manager_mut().is_drawing = false;
+            if let Some(old_skel) = self.animation.drag_start_skeleton.take() {
+                let mut patches = Vec::new();
+                patches.push(AnimPatch::Skeleton { old: old_skel, new: self.animation.project.skeleton.clone() });
+
+                if let Some(old_anim) = self.animation.drag_start_animation.take() {
+                    if let Some(id) = &self.animation.project.active_animation_id {
+                        if let Some(new_anim) = self.animation.project.animations.get(id) {
+                            for new_tl in &new_anim.timelines {
+                                let old_tl = old_anim.timelines.iter().find(|t| t.target_id == new_tl.target_id && t.property == new_tl.property);
+                                patches.push(AnimPatch::Timeline {
+                                    anim_id: id.clone(),
+                                    bone_id: new_tl.target_id.clone(),
+                                    prop: new_tl.property.clone(),
+                                    old: old_tl.cloned(),
+                                    new: Some(new_tl.clone()),
+                                });
+                            }
+                        }
+                    }
+                }
+                self.animation.history.commit(AnimPatch::Composite(patches));
+            }
             return Ok(());
         }
 
