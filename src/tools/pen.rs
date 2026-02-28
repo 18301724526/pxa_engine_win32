@@ -41,16 +41,16 @@ impl PenTool {
         }
     }
 
-    fn hit_test(&self, path: &BezierPath, x: f32, y: f32) -> (Option<usize>, Option<(usize, bool)>) {
+    pub fn hit_test(&self, path: &BezierPath, x: f32, y: f32) -> (Option<usize>, Option<(usize, bool)>) {
         let hit_radius = 6.0;
         let mouse = Vec2::new(x, y);
 
         if let Some(idx) = self.selected_node_idx {
             if let Some(node) = path.nodes.get(idx) {
-                if node.abs_in().distance(mouse) < hit_radius {
+                if node.handle_in != Vec2::new(0.0, 0.0) && node.abs_in().distance(mouse) < hit_radius {
                     return (None, Some((idx, true)));
                 }
-                if node.abs_out().distance(mouse) < hit_radius {
+                if node.handle_out != Vec2::new(0.0, 0.0) && node.abs_out().distance(mouse) < hit_radius {
                     return (None, Some((idx, false)));
                 }
             }
@@ -214,10 +214,18 @@ impl Tool for PenTool {
     }
 
     fn on_pointer_up(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+        let mode_was = self.mode;
         self.mode = PenMode::Idle;
         
         if let Some(old_path) = self.snapshot.take() {
             let current_path = &store.active_path;
+            if let PenMode::MovingAnchor(idx) = mode_was {
+                if old_path == *current_path && idx < store.active_path.nodes.len() {
+                    store.active_path.nodes.remove(idx);
+                    self.selected_node_idx = None;
+                    return Ok(Some(ActionPatch::new_path_change(id_gen::gen_id(), old_path, store.active_path.clone())));
+                }
+            }
             if old_path != *current_path {
                 return Ok(Some(ActionPatch::new_path_change(id_gen::gen_id(), old_path, current_path.clone())));
             }

@@ -47,9 +47,8 @@ impl Tool for EllipseSelectTool {
         };
 
         let mask_count = store.selection.mask.iter().filter(|&&m| m).count();
-        if mask_count == 0 {
-            store.selection = old.clone();
-            return Ok(None);
+        if mask_count <= 1 {
+            store.selection.clear();
         }
         let new = store.selection.clone();
         

@@ -5,6 +5,7 @@ use crate::history::patch::ActionPatch;
 use crate::app::events::{InputEvent, EngineEffect};
 use crate::app::commands::AppCommand;
 use crate::app::ui_state::UiState;
+use crate::app::shortcut_manager::ShortcutManager;
 use crate::app::view_state::ViewState;
 use std::collections::VecDeque;
 use crate::core::error::CoreError;
@@ -90,7 +91,6 @@ pub struct AnimationState {
     pub is_playing: bool,
     pub playback_speed: f32,
     pub create_bone_tool: crate::tools::create_bone::CreateBoneTool,
-    pub auto_key_enabled: bool,
     pub is_looping: bool,
 }
 
@@ -105,13 +105,11 @@ impl AnimationState {
             is_playing: false,
             playback_speed: 1.0,
             create_bone_tool: crate::tools::create_bone::CreateBoneTool::new(),
-            auto_key_enabled: false,
             is_looping: true,
         }
     }
     
     pub fn auto_key_bone(&mut self, bone_id: &str, property: crate::core::animation::timeline::TimelineProperty) {
-        if !self.auto_key_enabled { return; }
         let time = self.current_time;
         let active_id = match &self.project.active_animation_id {
             Some(id) => id.clone(),
@@ -124,14 +122,13 @@ impl AnimationState {
         };
         
         if let Some(anim) = self.project.animations.get_mut(&active_id) {
-            let mut tl_idx = anim.timelines.iter().position(|t| t.target_id == bone_id && t.property == property);
-            if tl_idx.is_none() {
-                anim.timelines.push(crate::core::animation::timeline::Timeline::new(bone_id.to_string(), property.clone()));
-                tl_idx = Some(anim.timelines.len() - 1);
-            }
-            
-            if let Some(idx) = tl_idx {
-                let timeline = &mut anim.timelines[idx];
+            let idx = anim.timelines.iter().position(|t| t.target_id == bone_id && t.property == property)
+                .unwrap_or_else(|| {
+                    anim.timelines.push(crate::core::animation::timeline::Timeline::new(bone_id.to_string(), property.clone()));
+                    anim.timelines.len() - 1
+                });
+
+            let timeline = &mut anim.timelines[idx];
                 use crate::core::animation::timeline::{KeyframeValue, CurveType};
                 match property {
                     crate::core::animation::timeline::TimelineProperty::Rotation => 
@@ -142,11 +139,11 @@ impl AnimationState {
                         timeline.add_keyframe(time, KeyframeValue::Scale(transform.scale_x, transform.scale_y), CurveType::Linear),
                     _ => {}
                 }
+                anim.recalculate_duration();
             }
-            anim.recalculate_duration();
+            
         }
     }
-}
 
 pub struct AppState {
     pub engine: PxaEngine,
@@ -158,6 +155,7 @@ pub struct AppState {
     pub is_dirty: bool,
     pub mode: AppMode,
     pub animation: AnimationState,
+    pub shortcuts: ShortcutManager,
 }
 
 impl AppState {
@@ -172,6 +170,7 @@ impl AppState {
             is_dirty: false,
             mode: AppMode::PixelEdit,
             animation: AnimationState::new(),
+            shortcuts: ShortcutManager::new(),
         }
     }
     pub fn enqueue_command(&mut self, cmd: AppCommand) {
@@ -215,7 +214,13 @@ impl AppState {
                     bone_tool.parent_bone_id = self.ui.selected_bone_id.clone();
                 }
             }
-            return self.handle_animation_click(x, y);
+            if self.engine.tool_manager().active_type == ToolType::CreateBone {
+                let (store, symmetry, tool_manager) = self.engine.parts_mut();
+                let _ = tool_manager.handle_pointer_down(x, y, store, symmetry);
+                return Ok(());
+            } else {
+                return self.handle_animation_click(x, y);
+            }
         }
 
         if self.engine.tool_manager().active_type == ToolType::CreateBone {
@@ -244,6 +249,11 @@ impl AppState {
         let dy = (y as i32).wrapping_sub(last_pos.1 as i32) as f32;
         self.last_mouse_pos = Some((x, y));
         if self.mode == AppMode::Animation {
+            if self.engine.tool_manager().active_type == ToolType::CreateBone {
+                let (store, symmetry, tool_manager) = self.engine.parts_mut();
+                return tool_manager.handle_pointer_move(x, y, store, symmetry);
+            }
+
             if self.engine.tool_manager().is_drawing {
                 let tool = self.engine.tool_manager().active_type;
                 if let Some(bone_id) = &self.ui.selected_bone_id {
@@ -323,6 +333,21 @@ impl AppState {
         
         if self.mode == AppMode::Animation {
             self.engine.tool_manager_mut().is_drawing = false;
+            if self.engine.tool_manager().active_type == ToolType::CreateBone {
+                 if let Some(tool) = self.engine.tool_manager().tools.get(&ToolType::CreateBone) {
+                     if let Some(bone_tool) = tool.as_any().downcast_ref::<crate::tools::create_bone::CreateBoneTool>() {
+                         let new_bone_id = bone_tool.commit_to_skeleton(&mut self.animation.project.skeleton);
+                         if let Some(id) = new_bone_id {
+                             self.ui.selected_bone_id = Some(id);
+                             self.animation.project.skeleton.update();
+                             self.is_dirty = true;
+                             self.view.needs_full_redraw = true;
+                         }
+                     }
+                 }
+                 let (store, _, tool_manager) = self.engine.parts_mut();
+                 return tool_manager.handle_pointer_up(store).map(|_| ());
+            }
             if let Some(old_skel) = self.animation.drag_start_skeleton.take() {
                 let mut patches = Vec::new();
                 patches.push(AnimPatch::Skeleton { old: old_skel, new: self.animation.project.skeleton.clone() });

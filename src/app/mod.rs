@@ -10,3 +10,4 @@ pub mod tool_manager;
 pub mod context;
 pub mod commands;
 pub mod command_handler;
+pub mod shortcut_manager;

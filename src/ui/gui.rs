@@ -1,4 +1,4 @@
-use crate::app::state::{AppState, ToolType, AppMode};
+use crate::app::state::{AppState, AppMode, ToolType};
 use crate::ui::cursor_overlay::CursorOverlay;
 use egui::{FontData, FontDefinitions, FontFamily};
 use crate::ui::title_bar::TitleBar;
@@ -50,33 +50,14 @@ impl Gui {
             if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::D)) { app.enqueue_command(AppCommand::ClearSelection); }
             
             ctx.input(|i| {
-                for event in &i.events {
-                    if let egui::Event::Text(text) = event {
-                        if text == "[" { 
-                            let (size, _, _) = app.engine.brush_settings_mut();
-                            *size = size.saturating_sub(1).max(1); 
-                        }
-                        else if text == "]" { 
-                            let (size, _, _) = app.engine.brush_settings_mut();
-                            *size = (*size + 1).min(20); 
-                        }
-                        else if text == "p" { app.set_tool(ToolType::Pencil); }
-                        else if text == "e" { app.set_tool(ToolType::Eraser); }
-                        else if text == "b" { app.set_tool(ToolType::Bucket); }
-                        else if text == "t" { app.set_tool(ToolType::Transform); }
-                        else if text == "c" { app.set_tool(ToolType::Pen); }
+            for event in &i.events {
+                if let egui::Event::Text(text) = event {
+                    if let Some(cmd) = app.shortcuts.handle_text_input(text, app.mode) {
+                        app.enqueue_command(cmd);
                     }
                 }
-            });
-        } else if app.mode == AppMode::Animation {
-            ctx.input(|i| {
-                for event in &i.events {
-                    if let egui::Event::Text(text) = event {
-                        if text == "c" { app.set_tool(ToolType::BoneRotate); }
-                        else if text == "v" { app.set_tool(ToolType::BoneTranslate); }
-                    }
-                }
-            });
+            }
+        });
         }
 
         let mut style = (*ctx.style()).clone();
@@ -176,8 +157,18 @@ impl Gui {
             }
 
             if app.mode == AppMode::PixelEdit && response.secondary_clicked() {
-                if app.engine.store().selection.is_active {
-                    if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                    let (cx, cy) = get_canvas_pos(pos);
+
+                    if app.engine.tool_manager().active_type == ToolType::Pen {
+                        let tool = app.engine.tool_manager().tools.get(&ToolType::Pen).unwrap();
+                        let pen = tool.as_any().downcast_ref::<crate::tools::pen::PenTool>().unwrap();
+                        if let (Some(idx), _) = pen.hit_test(&app.engine.store().active_path, cx as f32, cy as f32) {
+                            app.ui.canvas_menu_pos = pos;
+                            app.ui.selected_node_idx = Some(idx);
+                            app.ui.show_canvas_menu = true;
+                        }
+                    } else if app.engine.store().selection.is_active {
                         app.ui.canvas_menu_pos = pos;
                         app.ui.show_canvas_menu = true;
                     }
@@ -194,18 +185,31 @@ impl Gui {
                             ui.set_max_width(200.0);
                             ui.set_min_width(120.0);
                             
-                            if ui.button(t!("tool.deselect")).clicked() {
-                                app.enqueue_command(AppCommand::ClearSelection);
-                                app.ui.show_canvas_menu = false;
-                            }
-                            if ui.button(t!("tool.invert_selection")).clicked() {
-                                app.enqueue_command(AppCommand::InvertSelection);
-                                app.ui.show_canvas_menu = false;
-                            }
-                            ui.separator();
-                            if ui.button(t!("tool.stroke_selection")).clicked() {
-                                app.enqueue_command(AppCommand::StrokeSelection(1));
-                                app.ui.show_canvas_menu = false;
+                            if app.engine.tool_manager().active_type == ToolType::Pen {
+                                if let Some(idx) = app.ui.selected_node_idx {
+                                    if ui.button(t!("tool.convert_node")).clicked() {
+                                        app.enqueue_command(AppCommand::TogglePathNodeType(idx));
+                                        app.ui.show_canvas_menu = false;
+                                    }
+                                    if ui.button(t!("tool.delete_node")).clicked() {
+                                        app.enqueue_command(AppCommand::DeletePathNode(idx));
+                                        app.ui.show_canvas_menu = false;
+                                    }
+                                }
+                            } else {
+                                if ui.button(t!("tool.deselect")).clicked() {
+                                    app.enqueue_command(AppCommand::ClearSelection);
+                                    app.ui.show_canvas_menu = false;
+                                }
+                                if ui.button(t!("tool.invert_selection")).clicked() {
+                                    app.enqueue_command(AppCommand::InvertSelection);
+                                    app.ui.show_canvas_menu = false;
+                                }
+                                ui.separator();
+                                if ui.button(t!("tool.stroke_selection")).clicked() {
+                                    app.enqueue_command(AppCommand::StrokeSelection(1));
+                                    app.ui.show_canvas_menu = false;
+                                }
                             }
                         });
                     });

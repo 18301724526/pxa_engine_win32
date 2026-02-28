@@ -71,8 +71,9 @@ impl PencilTool {
         for i in 0..size {
             for j in 0..size {
                 if shape == crate::core::store::BrushShape::Circle && size > 2 {
-                    let dx = (i as f32 - offset as f32) + 0.5;
-                    let dy = (j as f32 - offset as f32) + 0.5;
+                    let center = (size as f32 - 1.0) / 2.0;
+                    let dx = i as f32 - center;
+                    let dy = j as f32 - center;
                     let radius = size as f32 / 2.0;
                     if dx * dx + dy * dy > radius * radius { continue; }
                 }

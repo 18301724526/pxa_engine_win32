@@ -49,36 +49,42 @@ impl Toolbar {
             
             ui.separator();
 
-            let mut auto_key = app.animation.auto_key_enabled;
-            let auto_key_color = if auto_key { Color32::from_rgb(255, 60, 60) } else { Color32::GRAY };
-            if ui.toggle_value(&mut auto_key, egui::RichText::new("🔑 自动关键帧").color(auto_key_color)).clicked() {
-                app.animation.auto_key_enabled = auto_key;
-            }
+            let auto_key_color = if app.ui.auto_keyframe { Color32::from_rgb(255, 60, 60) } else { Color32::GRAY };
+            ui.toggle_value(&mut app.ui.auto_keyframe, egui::RichText::new("🔑 自动关键帧").color(auto_key_color));
              
             ui.separator();
             
-            if ui.button("⏮").on_hover_text("回到首帧").clicked() { 
-                app.animation.current_time = 0.0; 
-                crate::animation::controller::AnimationController::apply_current_pose(&mut app.animation); 
-            }
-            if ui.button("⏪").on_hover_text("上一帧").clicked() { 
-                app.animation.current_time = (app.animation.current_time - 1.0/30.0).max(0.0); 
-                crate::animation::controller::AnimationController::apply_current_pose(&mut app.animation); 
-            }
-            if ui.button(if app.animation.is_playing { "⏸ 暂停" } else { "▶ 播放" }).clicked() {
-                app.animation.is_playing = !app.animation.is_playing;
-            }
-            if ui.button("⏩").on_hover_text("下一帧").clicked() { 
-                app.animation.current_time += 1.0/30.0; 
-                crate::animation::controller::AnimationController::apply_current_pose(&mut app.animation); 
-            }
+            let duration = active_id.as_ref().and_then(|id| app.animation.project.animations.get(id)).map(|a| a.duration).unwrap_or(0.0);
+
+            if ui.button("⏮").on_hover_text("回到首帧").clicked() { app.enqueue_command(AppCommand::SetTime(0.0)); }
+            if ui.button("⏪").on_hover_text("上一帧").clicked() { app.enqueue_command(AppCommand::StepFrame(-1)); }
+            if ui.button(if app.animation.is_playing { "⏸ 暂停" } else { "▶ 播放" }).clicked() { app.enqueue_command(AppCommand::TogglePlayback); }
+            if ui.button("⏩").on_hover_text("下一帧").clicked() { app.enqueue_command(AppCommand::StepFrame(1)); }
+            if ui.button("⏭").on_hover_text("末帧").clicked() { app.enqueue_command(AppCommand::SetTime(duration)); }
             
             let mut looping = app.animation.is_looping;
-            if ui.toggle_value(&mut looping, "🔁").on_hover_text("循环播放").clicked() { 
-                app.animation.is_looping = looping; 
+            if ui.toggle_value(&mut looping, "🔁").on_hover_text("循环播放").clicked() { app.enqueue_command(AppCommand::ToggleLoop); }
+
+            let mut speed = app.animation.playback_speed;
+            if ui.add(egui::Slider::new(&mut speed, 0.1..=5.0).text("x Speed")).changed() {
+                app.enqueue_command(AppCommand::SetPlaybackSpeed(speed));
             }
 
             ui.separator();
+            
+            ui.menu_button("🔽 显示筛选", |ui| {
+                let props = vec![
+                    (TimelineProperty::Translation, "✥ 移动"),
+                    (TimelineProperty::Rotation, "⟳ 旋转"),
+                    (TimelineProperty::Scale, "◱ 缩放")
+                ];
+                for (prop, label) in props {
+                    let mut is_active = app.ui.timeline_filter.contains(&prop);
+                    if ui.checkbox(&mut is_active, label).clicked() {
+                        app.enqueue_command(AppCommand::ToggleTimelineFilter(prop));
+                    }
+                }
+            });
             
             ui.toggle_value(&mut app.ui.show_curve_editor, "📈 曲线");
             if ui.button("➡️ 自动偏移").clicked() {
@@ -89,12 +95,12 @@ impl Toolbar {
             
             if let Some(bone_id) = app.ui.selected_bone_id.clone() {
                 if ui.button("手动 K 帧 (所有)").clicked() {
-                    let old_auto = app.animation.auto_key_enabled;
-                    app.animation.auto_key_enabled = true;
+                    let old_auto = app.ui.auto_keyframe;
+                    app.ui.auto_keyframe = true;
                     app.animation.auto_key_bone(&bone_id, TimelineProperty::Rotation);
                     app.animation.auto_key_bone(&bone_id, TimelineProperty::Translation);
                     app.animation.auto_key_bone(&bone_id, TimelineProperty::Scale);
-                    app.animation.auto_key_enabled = old_auto;
+                    app.ui.auto_keyframe = old_auto;
                 }
             } else {
                 ui.label(t!("anim.select_bone_to_keyframe").to_string());

@@ -1,5 +1,6 @@
 use egui::{Ui, Color32, RichText};
 use crate::app::state::AppState;
+use crate::app::commands::AppCommand;
 
 pub struct BoneTransformPanel;
 
@@ -17,6 +18,12 @@ impl BoneTransformPanel {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
             ui.label(RichText::new("Transform").strong().color(Color32::LIGHT_GRAY));
+
+            let coord_text = if app.ui.show_world_transform { "World" } else { "Local" };
+            if ui.button(coord_text).clicked() {
+                app.enqueue_command(AppCommand::ToggleTransformCoordinateSystem);
+            }
+            ui.checkbox(&mut app.ui.auto_keyframe, "Auto-Key");
 
             if let Some(bone_id) = &app.ui.selected_bone_id {
                 if let Some(bone) = app.animation.project.skeleton.bones.iter_mut().find(|b| b.data.id == *bone_id) {
@@ -54,6 +61,9 @@ impl BoneTransformPanel {
                         needs_update = true; scale_changed = true;
                     }
                 }
+                if ui.button("Key Frame").clicked() {
+                    app.enqueue_command(AppCommand::InsertManualKeyframe(bone_id.clone()));
+                }
             } else {
                 ui.label(RichText::new("未选中骨骼").color(Color32::DARK_GRAY));
             }
@@ -66,9 +76,11 @@ impl BoneTransformPanel {
 
             if let Some(bone_id) = &app.ui.selected_bone_id {
                 let id = bone_id.clone();
-                if rot_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Rotation); }
-                if pos_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Translation); }
-                if scale_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Scale); }
+                if app.ui.auto_keyframe {
+                    if rot_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Rotation); }
+                    if pos_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Translation); }
+                    if scale_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Scale); }
+                }
             }
         }
     }

@@ -179,6 +179,20 @@ impl Animation {
             timelines: Vec::new(),
         }
     }
+    pub fn initialize_tracks(&mut self, skeleton: &crate::core::animation::skeleton::Skeleton) {
+        for bone in &skeleton.bones {
+            let props = [
+                TimelineProperty::Translation,
+                TimelineProperty::Rotation,
+                TimelineProperty::Scale,
+            ];
+            for prop in props {
+                if !self.timelines.iter().any(|t| t.target_id == bone.data.id && t.property == prop) {
+                    self.timelines.push(Timeline::new(bone.data.id.clone(), prop));
+                }
+            }
+        }
+    }
 
     pub fn recalculate_duration(&mut self) {
         let mut max_time = 0.0_f32;

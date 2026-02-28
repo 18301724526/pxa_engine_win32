@@ -132,15 +132,15 @@ impl LayerService {
         }
 
         let mut patches = Vec::new();
-        for &idx in indices.iter().rev() {
-            let layer = ctx.store.layers[idx].clone();
-            let old_active_id = ctx.store.active_layer_id.clone();
-            patches.push(ActionPatch::new_layer_remove(format!("rm_{}", layer.id), layer.id.clone(), layer, idx, old_active_id));
-        }
-        
         let insert_index = indices.first().copied().unwrap_or(0);
         let old_active_id = ctx.store.active_layer_id.clone();
         patches.push(ActionPatch::new_layer_add(format!("add_merged_{}", new_id), new_id.clone(), merged_layer, insert_index, old_active_id));
+
+        for &idx in indices.iter().rev() {
+            let layer = ctx.store.layers[idx].clone();
+            let old_active_id_for_rm = ctx.store.active_layer_id.clone();
+            patches.push(ActionPatch::new_layer_remove(format!("rm_{}", layer.id), layer.id.clone(), layer, idx, old_active_id_for_rm));
+        }
         
         let composite_patch = ActionPatch::new_composite(format!("merge_{}", id_gen::gen_id()), patches);
         ctx.history.commit(composite_patch, ctx.store)?;

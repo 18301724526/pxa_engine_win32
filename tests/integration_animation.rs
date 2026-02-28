@@ -156,20 +156,25 @@ fn test_keyframe_insertion_and_data_binding() {
     let mut app = AppState::new();
     app.mode = AppMode::Animation;
 
+    // 先加骨骼，确保物理初始化逻辑生效
     app.animation.project.skeleton.add_bone(BoneData::new("BoneA".into(), "Arm".into()));
     CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Attack".into()));
     
     let anim_id = app.animation.project.active_animation_id.clone().unwrap();
-    let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
-
-    let mut tl = Timeline::new("BoneA".into(), TimelineProperty::Rotation);
-    tl.add_keyframe(1.5, KeyframeValue::Rotate(45.0), CurveType::Linear);
-    anim.timelines.push(tl);
+    {
+        let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
+        // 查找预初始化的轨道而不是 push
+        let tl = anim.timelines.iter_mut().find(|t| t.target_id == "BoneA" && t.property == TimelineProperty::Rotation).unwrap();
+        tl.add_keyframe(1.5, KeyframeValue::Rotate(45.0), CurveType::Linear);
+    }
 
     let stored_anim = app.animation.project.animations.get(&anim_id).unwrap();
-    assert_eq!(stored_anim.timelines.len(), 1);
-    assert_eq!(stored_anim.timelines[0].keyframes[0].time, 1.5);
-    assert_eq!(stored_anim.timelines[0].keyframes[0].value, KeyframeValue::Rotate(45.0));
+    // 一个骨骼物理初始化产生 3 条轨道（Translation, Rotation, Scale）
+    assert_eq!(stored_anim.timelines.len(), 3);
+    
+    let rot_tl = stored_anim.timelines.iter().find(|t| t.property == TimelineProperty::Rotation).unwrap();
+    assert_eq!(rot_tl.keyframes[0].time, 1.5);
+    assert_eq!(rot_tl.keyframes[0].value, KeyframeValue::Rotate(45.0));
 }
 
 #[test]
@@ -183,10 +188,10 @@ fn test_multi_keyframe_drag_and_box_select() {
     let anim_id = app.animation.project.active_animation_id.clone().unwrap();
     {
         let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
-        let mut tl = Timeline::new("BoneA".into(), TimelineProperty::Rotation);
+        // 查找物理初始化的轨道
+        let tl = anim.timelines.iter_mut().find(|t| t.target_id == "BoneA" && t.property == TimelineProperty::Rotation).unwrap();
         tl.add_keyframe(1.0, KeyframeValue::Rotate(10.0), CurveType::Linear);
         tl.add_keyframe(2.0, KeyframeValue::Rotate(20.0), CurveType::Linear);
-        anim.timelines.push(tl);
     }
 
     app.ui.selected_keyframes = vec![
@@ -197,8 +202,9 @@ fn test_multi_keyframe_drag_and_box_select() {
     CommandHandler::execute(&mut app, AppCommand::MoveSelectedKeyframes(0.5));
 
     let anim = app.animation.project.animations.get(&anim_id).unwrap();
-    assert!((anim.timelines[0].keyframes[0].time - 1.5).abs() < 0.001, "Frame 1 should be 1.5");
-    assert!((anim.timelines[0].keyframes[1].time - 2.5).abs() < 0.001, "Frame 2 should be 2.5");
+    let rot_tl = anim.timelines.iter().find(|t| t.property == TimelineProperty::Rotation).unwrap();
+    assert!((rot_tl.keyframes[0].time - 1.5).abs() < 0.001, "Frame 1 should be 1.5");
+    assert!((rot_tl.keyframes[1].time - 2.5).abs() < 0.001, "Frame 2 should be 2.5");
 }
 
 #[test]
@@ -212,11 +218,9 @@ fn test_timeline_box_select_ui_logic() {
     
     {
         let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
-        let mut tl = Timeline::new("B1".into(), TimelineProperty::Rotation);
+        let tl = anim.timelines.iter_mut().find(|t| t.target_id == "B1" && t.property == TimelineProperty::Rotation).unwrap();
         tl.add_keyframe(1.0, KeyframeValue::Rotate(90.0), CurveType::Linear);
-        anim.timelines.push(tl);
     }
-    app.ui.expanded_timeline_bones.insert("B1".into());
 
     let ctx = Context::default();
 
@@ -228,14 +232,12 @@ fn test_timeline_box_select_ui_logic() {
     ctx.begin_frame(input1);
     egui::CentralPanel::default().show(&ctx, |ui| { TimelinePanel::show(ui, &mut app); });
     let _ = ctx.end_frame();
-    println!("[TEST] After Frame 1 - box_select_start: {:?}", app.ui.box_select_start);
 
     let mut input2 = RawInput::default();
     input2.events.push(Event::PointerMoved(pos2(600.0, 200.0)));
     ctx.begin_frame(input2);
     egui::CentralPanel::default().show(&ctx, |ui| { TimelinePanel::show(ui, &mut app); });
     let _ = ctx.end_frame();
-    println!("[TEST] After Frame 2 - box_select_start: {:?}", app.ui.box_select_start);
 
     let mut input3 = RawInput::default();
     input3.events.push(Event::PointerButton { 
@@ -244,9 +246,8 @@ fn test_timeline_box_select_ui_logic() {
     ctx.begin_frame(input3);
     egui::CentralPanel::default().show(&ctx, |ui| { TimelinePanel::show(ui, &mut app); });
     let _ = ctx.end_frame();
-    println!("[TEST] After Frame 3 - selected_keyframes count: {}", app.ui.selected_keyframes.len());
 
-    assert!(!app.ui.selected_keyframes.is_empty(), "UI 框选失败！没有任何关键帧被选中，证实了渲染层阻挡或结算周期滞后的 BUG。");
+    assert!(!app.ui.selected_keyframes.is_empty(), "UI 框选失败！没有任何关键帧被选中。");
 }
 
 #[test]
@@ -263,13 +264,11 @@ fn test_spine_cyclic_offset_logic() {
         let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
         anim.duration = 2.0;
 
-        let mut tl1 = Timeline::new("B1".into(), TimelineProperty::Rotation);
+        let tl1 = anim.timelines.iter_mut().find(|t| t.target_id == "B1" && t.property == TimelineProperty::Rotation).unwrap();
         tl1.add_keyframe(1.8, KeyframeValue::Rotate(10.0), CurveType::Linear);
-        anim.timelines.push(tl1);
 
-        let mut tl2 = Timeline::new("B2".into(), TimelineProperty::Rotation);
+        let tl2 = anim.timelines.iter_mut().find(|t| t.target_id == "B2" && t.property == TimelineProperty::Rotation).unwrap();
         tl2.add_keyframe(1.8, KeyframeValue::Rotate(20.0), CurveType::Linear);
-        anim.timelines.push(tl2);
     }
 
     app.ui.selected_keyframes = vec![
@@ -283,11 +282,14 @@ fn test_spine_cyclic_offset_logic() {
 
     assert_eq!(anim.duration, 2.0, "Spine Offset 绝不能改变动画总时长！");
 
-    let b1_time = anim.timelines[0].keyframes[0].time;
-    assert!((b1_time - 0.3).abs() < 0.001, "B1 没有正确循环折返！计算结果为: {}", b1_time);
+    let b1_tl = anim.timelines.iter().find(|t| t.target_id == "B1" && t.property == TimelineProperty::Rotation).unwrap();
+    // 补帧逻辑会向 0.0s 插入采样帧
+    let b1_time = b1_tl.keyframes.iter().find(|k| (k.time - 0.3).abs() < 0.001).map(|k| k.time).expect("B1 关键帧应折返至 0.3s");
+    assert!((b1_time - 0.3).abs() < 0.001);
 
-    let b2_time = anim.timelines[1].keyframes[0].time;
-    assert!((b2_time - 0.3333).abs() < 0.001, "B2 递增错位或折返失败！计算结果为: {}", b2_time);
+    let b2_tl = anim.timelines.iter().find(|t| t.target_id == "B2" && t.property == TimelineProperty::Rotation).unwrap();
+    let b2_time = b2_tl.keyframes.iter().find(|k| (k.time - 0.3333).abs() < 0.001).map(|k| k.time).expect("B2 关键帧应递增折返");
+    assert!((b2_time - 0.3333).abs() < 0.001);
 }
 
 #[test]
@@ -304,11 +306,11 @@ fn test_animation_history_performance() {
     {
         let anim = app.animation.project.animations.get_mut(&anim_id).unwrap();
         for i in 0..100 {
-            let mut tl = Timeline::new(format!("Bone{}", i), TimelineProperty::Rotation);
+            let bone_id = format!("Bone{}", i);
+            let tl = anim.timelines.iter_mut().find(|t| t.target_id == bone_id && t.property == TimelineProperty::Rotation).unwrap();
             for f in 0..100 {
                 tl.add_keyframe(f as f32 * 0.1, KeyframeValue::Rotate(f as f32), CurveType::Linear);
             }
-            anim.timelines.push(tl);
         }
     }
 

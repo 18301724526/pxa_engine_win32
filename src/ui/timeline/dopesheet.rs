@@ -95,15 +95,18 @@ impl Dopesheet {
                 }
 
                 for (bone_id, bone_name) in bones_list {
-                    let is_expanded = app.ui.expanded_timeline_bones.contains(&bone_id);
                     let mut tracks_to_draw = vec![
-                        (None, bone_name.clone(), Color32::WHITE, 0.0, bone_all_times.get(&bone_id))
+                        (None, bone_name.clone(), Color32::LIGHT_GRAY, 0.0, bone_all_times.get(&bone_id))
                     ];
                     
-                    if is_expanded {
-                        tracks_to_draw.push((Some(TimelineProperty::Rotation), "⟳ 旋转".to_string(), Color32::GREEN, 20.0, bone_prop_times.get(&(bone_id.clone(), TimelineProperty::Rotation))));
-                        tracks_to_draw.push((Some(TimelineProperty::Translation), "✥ 移动".to_string(), Color32::from_rgb(0, 150, 255), 20.0, bone_prop_times.get(&(bone_id.clone(), TimelineProperty::Translation))));
-                        tracks_to_draw.push((Some(TimelineProperty::Scale), "◱ 缩放".to_string(), Color32::RED, 20.0, bone_prop_times.get(&(bone_id.clone(), TimelineProperty::Scale))));
+                    if app.ui.timeline_filter.contains(&TimelineProperty::Rotation) {
+                        tracks_to_draw.push((Some(TimelineProperty::Rotation), "⟳ 旋转".to_string(), Color32::from_rgb(80, 200, 120), 20.0, bone_prop_times.get(&(bone_id.clone(), TimelineProperty::Rotation))));
+                    }
+                    if app.ui.timeline_filter.contains(&TimelineProperty::Translation) {
+                        tracks_to_draw.push((Some(TimelineProperty::Translation), "✥ 移动".to_string(), Color32::from_rgb(80, 180, 255), 20.0, bone_prop_times.get(&(bone_id.clone(), TimelineProperty::Translation))));
+                    }
+                    if app.ui.timeline_filter.contains(&TimelineProperty::Scale) {
+                        tracks_to_draw.push((Some(TimelineProperty::Scale), "◱ 缩放".to_string(), Color32::from_rgb(255, 100, 100), 20.0, bone_prop_times.get(&(bone_id.clone(), TimelineProperty::Scale))));
                     }
 
                     for (prop_opt, label_text, kf_color, indent, times) in tracks_to_draw {
@@ -114,16 +117,8 @@ impl Dopesheet {
                             ui.painter().rect_filled(label_rect, 0.0, bg_color);
 
                             if prop_opt.is_none() {
-                                let icon = if is_expanded { "▼" } else { "▶" };
-                                let icon_rect = egui::Rect::from_min_size(label_rect.min, vec2(20.0, row_height));
-                                let icon_resp = ui.interact(icon_rect, ui.id().with(format!("exp_{}", bone_id)), Sense::click());
-                                if icon_resp.clicked() {
-                                    if is_expanded { app.ui.expanded_timeline_bones.remove(&bone_id); }
-                                    else { app.ui.expanded_timeline_bones.insert(bone_id.clone()); }
-                                }
-                                ui.painter().text(icon_rect.center(), Align2::CENTER_CENTER, icon, FontId::proportional(12.0), Color32::LIGHT_GRAY);
-                                ui.painter().text(label_rect.left_center() + vec2(20.0, 0.0), Align2::LEFT_CENTER, &label_text, FontId::proportional(14.0), Color32::WHITE);
-                                if label_resp.clicked() && !icon_resp.hovered() { app.ui.selected_bone_id = Some(bone_id.clone()); }
+                                ui.painter().text(label_rect.left_center() + vec2(10.0, 0.0), Align2::LEFT_CENTER, &label_text, FontId::proportional(14.0), Color32::WHITE);
+                                if label_resp.clicked() { app.ui.selected_bone_id = Some(bone_id.clone()); }
                             } else {
                                 ui.painter().text(label_rect.left_center() + vec2(indent, 0.0), Align2::LEFT_CENTER, &label_text, FontId::proportional(12.0), Color32::LIGHT_GRAY);
                             }
@@ -183,13 +178,9 @@ impl Dopesheet {
                                     let fill_color = if is_selected { Color32::WHITE } else { kf_color };
                                     let stroke_col = if is_selected { Color32::BLACK } else { Color32::WHITE };
                                     
-                                    let points = vec![
-                                        Pos2::new(kx, cy - size),
-                                        Pos2::new(kx + size, cy),
-                                        Pos2::new(kx, cy + size),
-                                        Pos2::new(kx - size, cy),
-                                    ];
-                                    ui.painter().add(egui::Shape::convex_polygon(points, fill_color, Stroke::new(1.0, stroke_col)));
+                                    let spine_rect = egui::Rect::from_center_size(Pos2::new(kx, cy), vec2(4.0, row_height - 6.0));
+                                    ui.painter().rect_filled(spine_rect, 1.0, fill_color);
+                                    if is_selected { ui.painter().rect_stroke(spine_rect, 1.0, Stroke::new(1.0, stroke_col)); }
                                 }
                             }
                         });
