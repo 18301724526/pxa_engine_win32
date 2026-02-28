@@ -28,9 +28,9 @@ PXA Engine 是一个专注于像素艺术创作的轻量级工具，目前绘画
 - Windows / macOS / Linux（目前主要针对 Win32 测试）
 
 ### 构建步骤
-git clone https://github.com/18301724526/pxa_engine_win32.git
-cd pxa_engine_win32
-cargo build --release
+- git clone https://github.com/18301724526/pxa_engine_win32.git
+- cd pxa_engine_win32
+- cargo build --release
 
 ### 运行
 cargo run --release
