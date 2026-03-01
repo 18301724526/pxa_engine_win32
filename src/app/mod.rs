@@ -11,3 +11,5 @@ pub mod context;
 pub mod commands;
 pub mod command_handler;
 pub mod shortcut_manager;
+pub mod handlers;
+pub mod input_handler;

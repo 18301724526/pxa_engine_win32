@@ -1,4 +1,4 @@
-use crate::app::state::AnimationState;
+use crate::animation::state::AnimationState;
 use std::time::Duration;
 
 pub struct AnimationController;

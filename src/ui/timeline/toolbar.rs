@@ -87,7 +87,10 @@ impl Toolbar {
             });
             
             ui.toggle_value(&mut app.ui.show_curve_editor, "📈 曲线");
-            if ui.button("➡️ 自动偏移").clicked() {
+            ui.toggle_value(&mut app.ui.is_offset_mode_active, "➡️ 偏移模式")
+                .on_hover_text("激活后拖拽帧进行循环偏移 (或使用快捷键: Ctrl+Alt+拖拽)");
+                
+            if ui.button("⚙ 偏移参数").clicked() {
                 app.ui.show_offset_modal = true;
             }
 

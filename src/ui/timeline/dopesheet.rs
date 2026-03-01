@@ -156,14 +156,32 @@ impl Dopesheet {
                                     if resp.drag_started() && !is_selected {
                                         app.ui.selected_keyframes = vec![(bone_id.clone(), prop_opt.clone(), t)];
                                     }
+                                    if resp.drag_started() {
+                                        if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+                                            app.ui.offset_drag_start_x = Some(pos.x);
+                                            app.enqueue_command(AppCommand::BeginOffsetSnapshot);
+                                        }
+                                    }
 
                                     if resp.dragged() {
                                         if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
-                                            let new_frame = ((pos.x - track_rect.min.x) / frame_width).round().max(0.0);
-                                            let new_time = new_frame / fps;
-                                            let dt = new_time - t;
-                                            if dt.abs() >= (1.0 / fps) * 0.5 {
-                                                app.enqueue_command(AppCommand::MoveSelectedKeyframes(dt));
+                                            let mods = ui.input(|i| i.modifiers);
+                                            let is_offset = app.ui.is_offset_mode_active || (mods.ctrl && mods.alt);
+                                            if is_offset {
+                                                if let Some(start_x) = app.ui.offset_drag_start_x {
+                                                    let dx = pos.x - start_x;
+                                                    let total_dt = (dx / frame_width).round() / fps;
+                                                    if total_dt.abs() >= (1.0 / fps) * 0.5 {
+                                                        app.enqueue_command(AppCommand::OffsetSelectedKeyframes(total_dt));
+                                                    }
+                                                }
+                                            } else {
+                                                let new_frame = ((pos.x - track_rect.min.x) / frame_width).round().max(0.0);
+                                                let new_time = new_frame / fps;
+                                                let dt = new_time - t;
+                                                if dt.abs() >= (1.0 / fps) * 0.5 {
+                                                    app.enqueue_command(AppCommand::MoveSelectedKeyframes(dt));
+                                                }
                                             }
                                         }
                                     }
@@ -229,6 +247,18 @@ impl Dopesheet {
                 let playhead_start = Pos2::new(playhead_x, header_rect.min.y);
                 let playhead_end = Pos2::new(playhead_x, ui.min_rect().max.y);
                 ui.painter().line_segment([playhead_start, playhead_end], Stroke::new(2.0, Color32::RED));
+                let mods = ui.input(|i| i.modifiers);
+                let is_offset = app.ui.is_offset_mode_active || (mods.ctrl && mods.alt);
+                if is_offset && !app.ui.selected_keyframes.is_empty() {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeHorizontal);
+                }
+
+                if ui.input(|i| i.pointer.any_released()) {
+                    if app.ui.offset_drag_start_x.is_some() {
+                        app.ui.offset_drag_start_x = None;
+                        app.enqueue_command(AppCommand::CommitOffsetSnapshot);
+                    }
+                }
             } else {
                 ui.label("No active animation.");
             }

@@ -2,7 +2,7 @@ use crate::app::io_service::IoService;
 use crate::app::engine::PxaEngine;
 use crate::core::id_gen;
 use crate::history::patch::ActionPatch;
-use crate::app::events::{InputEvent, EngineEffect};
+use crate::app::events::InputEvent;
 use crate::app::commands::AppCommand;
 use crate::app::ui_state::UiState;
 use crate::app::shortcut_manager::ShortcutManager;
@@ -10,7 +10,7 @@ use crate::app::view_state::ViewState;
 use std::collections::VecDeque;
 use crate::core::error::CoreError;
 use rust_i18n::t;
-use crate::animation::project::AnimProject;
+use crate::animation::state::AnimationState;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum ToolType { 
@@ -23,127 +23,6 @@ pub enum AppMode {
     PixelEdit,
     Animation,
 }
-
-#[derive(Clone)]
-pub enum AnimPatch {
-    Timeline { anim_id: String, bone_id: String, prop: crate::core::animation::timeline::TimelineProperty, old: Option<crate::core::animation::timeline::Timeline>, new: Option<crate::core::animation::timeline::Timeline> },
-    Skeleton { old: crate::core::animation::skeleton::Skeleton, new: crate::core::animation::skeleton::Skeleton },
-    Composite(Vec<AnimPatch>),
-}
-
-pub struct AnimHistory {
-    pub undo_stack: Vec<AnimPatch>,
-    pub redo_stack: Vec<AnimPatch>,
-}
-
-impl AnimHistory {
-    pub fn new() -> Self { Self { undo_stack: Vec::new(), redo_stack: Vec::new() } }
-    pub fn commit(&mut self, patch: AnimPatch) {
-        self.undo_stack.push(patch);
-        self.redo_stack.clear();
-    }
-    pub fn undo(&mut self, project: &mut AnimProject) -> bool {
-        if let Some(patch) = self.undo_stack.pop() {
-            self.apply_patch(project, &patch, true);
-            self.redo_stack.push(patch);
-            true
-        } else { false }
-    }
-    pub fn redo(&mut self, project: &mut AnimProject) -> bool {
-        if let Some(patch) = self.redo_stack.pop() {
-            self.apply_patch(project, &patch, false);
-            self.undo_stack.push(patch);
-            true
-        } else { false }
-    }
-    fn apply_patch(&self, project: &mut AnimProject, patch: &AnimPatch, is_undo: bool) {
-        match patch {
-            AnimPatch::Timeline { anim_id, bone_id, prop, old, new } => {
-                if let Some(anim) = project.animations.get_mut(anim_id) {
-                    let target = if is_undo { old } else { new };
-                    if let Some(tl) = target {
-                        if let Some(existing) = anim.timelines.iter_mut().find(|t| &t.target_id == bone_id && &t.property == prop) {
-                            *existing = tl.clone();
-                        } else {
-                            anim.timelines.push(tl.clone());
-                        }
-                    } else {
-                        anim.timelines.retain(|t| !(&t.target_id == bone_id && &t.property == prop));
-                    }
-                    anim.recalculate_duration();
-                }
-            }
-            AnimPatch::Skeleton { old, new } => { project.skeleton = if is_undo { old.clone() } else { new.clone() }; }
-            AnimPatch::Composite(patches) => {
-                let iter: Box<dyn Iterator<Item = &AnimPatch>> = if is_undo { Box::new(patches.iter().rev()) } else { Box::new(patches.iter()) };
-                for p in iter { self.apply_patch(project, p, is_undo); }
-            }
-        }
-    }
-}
-
-pub struct AnimationState {
-    pub project: AnimProject,
-    pub history: AnimHistory,
-    pub drag_start_skeleton: Option<crate::core::animation::skeleton::Skeleton>,
-    pub drag_start_animation: Option<crate::core::animation::timeline::Animation>,
-    pub current_time: f32,
-    pub is_playing: bool,
-    pub playback_speed: f32,
-    pub create_bone_tool: crate::tools::create_bone::CreateBoneTool,
-    pub is_looping: bool,
-}
-
-impl AnimationState {
-    pub fn new() -> Self {
-        Self {
-            project: AnimProject::new(),
-            history: AnimHistory::new(),
-            drag_start_skeleton: None,
-            drag_start_animation: None,
-            current_time: 0.0,
-            is_playing: false,
-            playback_speed: 1.0,
-            create_bone_tool: crate::tools::create_bone::CreateBoneTool::new(),
-            is_looping: true,
-        }
-    }
-    
-    pub fn auto_key_bone(&mut self, bone_id: &str, property: crate::core::animation::timeline::TimelineProperty) {
-        let time = self.current_time;
-        let active_id = match &self.project.active_animation_id {
-            Some(id) => id.clone(),
-            None => return,
-        };
-        
-        let transform = match self.project.skeleton.bones.iter().find(|b| b.data.id == bone_id) {
-            Some(b) => b.local_transform,
-            None => return,
-        };
-        
-        if let Some(anim) = self.project.animations.get_mut(&active_id) {
-            let idx = anim.timelines.iter().position(|t| t.target_id == bone_id && t.property == property)
-                .unwrap_or_else(|| {
-                    anim.timelines.push(crate::core::animation::timeline::Timeline::new(bone_id.to_string(), property.clone()));
-                    anim.timelines.len() - 1
-                });
-
-            let timeline = &mut anim.timelines[idx];
-                use crate::core::animation::timeline::{KeyframeValue, CurveType};
-                match property {
-                    crate::core::animation::timeline::TimelineProperty::Rotation => 
-                        timeline.add_keyframe(time, KeyframeValue::Rotate(transform.rotation), CurveType::Linear),
-                    crate::core::animation::timeline::TimelineProperty::Translation => 
-                        timeline.add_keyframe(time, KeyframeValue::Translate(transform.x, transform.y), CurveType::Linear),
-                    crate::core::animation::timeline::TimelineProperty::Scale => 
-                        timeline.add_keyframe(time, KeyframeValue::Scale(transform.scale_x, transform.scale_y), CurveType::Linear),
-                    _ => {}
-                }
-                anim.recalculate_duration();
-            }
-            
-        }
-    }
 
 pub struct AppState {
     pub engine: PxaEngine,
@@ -190,253 +69,24 @@ impl AppState {
 
     pub fn commit_current_tool(&mut self) {
         let effect = self.engine.handle_input(InputEvent::CommitTool);
-        self.handle_engine_effect(effect);
+        crate::app::input_handler::InputHandler::handle_engine_effect(self, effect);
     }
 
     pub fn cancel_current_tool(&mut self) {
         let effect = self.engine.handle_input(InputEvent::CancelTool);
-        self.handle_engine_effect(effect);
+        crate::app::input_handler::InputHandler::handle_engine_effect(self, effect);
     }
 
     pub fn on_mouse_down(&mut self, x: u32, y: u32) -> Result<(), CoreError> {
-        if self.mode == AppMode::Animation {
-            self.engine.tool_manager_mut().is_drawing = true;
-            self.last_mouse_pos = Some((x, y));
-
-            self.animation.drag_start_skeleton = Some(self.animation.project.skeleton.clone());
-            if let Some(id) = &self.animation.project.active_animation_id {
-                if let Some(anim) = self.animation.project.animations.get(id) {
-                    self.animation.drag_start_animation = Some(anim.clone());
-                }
-            }
-            if let Some(tool) = self.engine.tool_manager_mut().tools.get_mut(&ToolType::CreateBone) {
-                if let Some(bone_tool) = tool.as_any_mut().downcast_mut::<crate::tools::create_bone::CreateBoneTool>() {
-                    bone_tool.parent_bone_id = self.ui.selected_bone_id.clone();
-                }
-            }
-            if self.engine.tool_manager().active_type == ToolType::CreateBone {
-                let (store, symmetry, tool_manager) = self.engine.parts_mut();
-                let _ = tool_manager.handle_pointer_down(x, y, store, symmetry);
-                return Ok(());
-            } else {
-                return self.handle_animation_click(x, y);
-            }
-        }
-
-        if self.engine.tool_manager().active_type == ToolType::CreateBone {
-            if let Some(tool) = self.engine.tool_manager_mut().tools.get_mut(&ToolType::CreateBone) {
-                if let Some(bone_tool) = tool.as_any_mut().downcast_mut::<crate::tools::create_bone::CreateBoneTool>() {
-                    bone_tool.parent_bone_id = self.ui.selected_bone_id.clone();
-                }
-            }
-            let (store, symmetry, tool_manager) = self.engine.parts_mut();
-            return tool_manager.handle_pointer_down(x, y, store, symmetry);
-        }
-        let effect = self.engine.handle_input(InputEvent::PointerDown { x, y });
-        self.last_mouse_pos = Some((x, y));
-        let result = match &effect {
-            EngineEffect::Error(e) => Err(e.clone()),
-            _ => Ok(()),
-        };
-
-        self.handle_engine_effect(effect);
-        result
+        crate::app::input_handler::InputHandler::on_mouse_down(self, x, y)
     }
 
     pub fn on_mouse_move(&mut self, x: u32, y: u32) -> Result<(), CoreError> {
-        let last_pos = self.last_mouse_pos.unwrap_or((x, y));
-        let dx = (x as i32).wrapping_sub(last_pos.0 as i32) as f32;
-        let dy = (y as i32).wrapping_sub(last_pos.1 as i32) as f32;
-        self.last_mouse_pos = Some((x, y));
-        if self.mode == AppMode::Animation {
-            if self.engine.tool_manager().active_type == ToolType::CreateBone {
-                let (store, symmetry, tool_manager) = self.engine.parts_mut();
-                return tool_manager.handle_pointer_move(x, y, store, symmetry);
-            }
-
-            if self.engine.tool_manager().is_drawing {
-                let tool = self.engine.tool_manager().active_type;
-                if let Some(bone_id) = &self.ui.selected_bone_id {
-                    let skeleton = &mut self.animation.project.skeleton;
-                    if let Some(bone_idx) = skeleton.bones.iter().position(|b| b.data.id == *bone_id) {
-                        let mut changed = false;
-                        match tool {
-                            ToolType::BoneRotate => {
-                                let bone = &mut skeleton.bones[bone_idx];
-                                let base_sensitivity = 0.2;
-                                let acceleration = 0.02;
-                                let delta = dy * (base_sensitivity + dy.abs() * acceleration);
-                                bone.local_transform.rotation -= delta;
-                                changed = true;
-                            }
-                            ToolType::BoneTranslate => {
-                                let current_world_x = skeleton.bones[bone_idx].world_matrix[4];
-                                let current_world_y = skeleton.bones[bone_idx].world_matrix[5];
-                                
-                                let target_world_x = current_world_x + dx;
-                                let target_world_y = current_world_y + dy;
-                                let pm = skeleton.get_parent_world_matrix(bone_idx);
-                                let (a, b, c, d, tx, ty) = (pm[0], pm[1], pm[2], pm[3], pm[4], pm[5]);
-                                let det = a * d - b * c;
-
-                                if det.abs() > 1e-6 {
-                                    let inv_det = 1.0 / det;
-                                    let dx_world = target_world_x - tx;
-                                    let dy_world = target_world_y - ty;
-
-                                    let bone = &mut skeleton.bones[bone_idx];
-                                    bone.local_transform.x = (d * dx_world - c * dy_world) * inv_det;
-                                    bone.local_transform.y = (-b * dx_world + a * dy_world) * inv_det;
-                                    changed = true;
-                                }
-                            }
-                            _ => {}
-                        }
-
-                        if changed {
-                            self.is_dirty = true;
-                            self.view.needs_full_redraw = true;
-                            skeleton.update();
-
-                            let prop = match tool {
-                                ToolType::BoneRotate => Some(crate::core::animation::timeline::TimelineProperty::Rotation),
-                                ToolType::BoneTranslate => Some(crate::core::animation::timeline::TimelineProperty::Translation),
-                                _ => None,
-                            };
-                            if let Some(p) = prop {
-                                self.animation.auto_key_bone(bone_id, p);
-                            }
-                        }
-                    }
-                }
-            }
-            return Ok(());
-        }
-
-        if self.engine.tool_manager().active_type == ToolType::CreateBone {
-            let (store, symmetry, tool_manager) = self.engine.parts_mut();
-            return tool_manager.handle_pointer_move(x, y, store, symmetry);
-        }
-        let effect = self.engine.handle_input(InputEvent::PointerMove { x, y });
-        let result = match &effect {
-            EngineEffect::Error(e) => Err(e.clone()),
-            _ => Ok(()),
-        };
-
-        self.handle_engine_effect(effect);
-        result
+        crate::app::input_handler::InputHandler::on_mouse_move(self, x, y)
     }
 
     pub fn on_mouse_up(&mut self) -> Result<(), CoreError> {
-        let was_drawing = self.engine.tool_manager().is_drawing;
-        self.last_mouse_pos = None;
-        
-        if self.mode == AppMode::Animation {
-            self.engine.tool_manager_mut().is_drawing = false;
-            if self.engine.tool_manager().active_type == ToolType::CreateBone {
-                 if let Some(tool) = self.engine.tool_manager().tools.get(&ToolType::CreateBone) {
-                     if let Some(bone_tool) = tool.as_any().downcast_ref::<crate::tools::create_bone::CreateBoneTool>() {
-                         let new_bone_id = bone_tool.commit_to_skeleton(&mut self.animation.project.skeleton);
-                         if let Some(id) = new_bone_id {
-                             self.ui.selected_bone_id = Some(id);
-                             self.animation.project.skeleton.update();
-                             self.is_dirty = true;
-                             self.view.needs_full_redraw = true;
-                         }
-                     }
-                 }
-                 let (store, _, tool_manager) = self.engine.parts_mut();
-                 return tool_manager.handle_pointer_up(store).map(|_| ());
-            }
-            if let Some(old_skel) = self.animation.drag_start_skeleton.take() {
-                let mut patches = Vec::new();
-                patches.push(AnimPatch::Skeleton { old: old_skel, new: self.animation.project.skeleton.clone() });
-
-                if let Some(old_anim) = self.animation.drag_start_animation.take() {
-                    if let Some(id) = &self.animation.project.active_animation_id {
-                        if let Some(new_anim) = self.animation.project.animations.get(id) {
-                            for new_tl in &new_anim.timelines {
-                                let old_tl = old_anim.timelines.iter().find(|t| t.target_id == new_tl.target_id && t.property == new_tl.property);
-                                patches.push(AnimPatch::Timeline {
-                                    anim_id: id.clone(),
-                                    bone_id: new_tl.target_id.clone(),
-                                    prop: new_tl.property.clone(),
-                                    old: old_tl.cloned(),
-                                    new: Some(new_tl.clone()),
-                                });
-                            }
-                        }
-                    }
-                }
-                self.animation.history.commit(AnimPatch::Composite(patches));
-            }
-            return Ok(());
-        }
-
-        if was_drawing && self.engine.tool_manager().active_type == ToolType::CreateBone {
-             if let Some(tool) = self.engine.tool_manager().tools.get(&ToolType::CreateBone) {
-                 if let Some(bone_tool) = tool.as_any().downcast_ref::<crate::tools::create_bone::CreateBoneTool>() {
-                     let new_bone_id = bone_tool.commit_to_skeleton(&mut self.animation.project.skeleton);
-                     
-                     if let Some(id) = new_bone_id {
-                         self.ui.selected_bone_id = Some(id);
-                         self.animation.project.skeleton.update();
-                         self.is_dirty = true;
-                         self.view.needs_full_redraw = true;
-                     }
-                 }
-             }
-             let (store, _, tool_manager) = self.engine.parts_mut();
-             return tool_manager.handle_pointer_up(store).map(|_| ());
-        }
-
-        let effect = self.engine.handle_input(InputEvent::PointerUp);
-        let result = match &effect {
-            EngineEffect::Error(e) => Err(e.clone()),
-            _ => Ok(()),
-        };
-
-        self.handle_engine_effect(effect);
-        result
-    }
-
-    fn handle_animation_click(&mut self, x: u32, y: u32) -> Result<(), CoreError> {
-        let mut clicked_bone_id = None;
-        for bone in &self.animation.project.skeleton.bones {
-            let bx = bone.world_matrix[4];
-            let by = bone.world_matrix[5];
-            let fx = x as i32 as f32;
-            let fy = y as i32 as f32;
-            
-            if ((fx - bx).powi(2) + (fy - by).powi(2)).sqrt() < 10.0 {
-                clicked_bone_id = Some(bone.data.id.clone());
-                break;
-            }
-        }
-        let is_transform_tool = matches!(self.engine.tool_manager().active_type, ToolType::BoneRotate | ToolType::BoneTranslate);
-        if clicked_bone_id.is_some() || !is_transform_tool {
-            self.ui.selected_bone_id = clicked_bone_id;
-        }
-        Ok(())
-    }
-
-    fn handle_engine_effect(&mut self, effect: EngineEffect) {
-        match effect {
-            EngineEffect::None => {},
-            EngineEffect::RedrawCanvas => {
-                self.is_dirty = true;
-                self.view.needs_full_redraw = true;
-            },
-            EngineEffect::RedrawRect(x, y, w, h) => {
-                self.view.mark_dirty_canvas_rect(self.engine.store(), x, y, w, h);
-            },
-            EngineEffect::ToolCommitted => {
-                self.is_dirty = true;
-            },
-            EngineEffect::Error(e) => {
-                self.ui.error_message = Some(e.to_string());
-            }
-        }
+        crate::app::input_handler::InputHandler::on_mouse_up(self)
     }
 
     pub fn undo(&mut self) { 

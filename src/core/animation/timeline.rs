@@ -23,14 +23,14 @@ pub enum TimelineProperty {
     Color,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Keyframe {
     pub time: f32, 
     pub value: KeyframeValue,
     pub curve: CurveType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Timeline {
     pub target_id: String,
     pub property: TimelineProperty,

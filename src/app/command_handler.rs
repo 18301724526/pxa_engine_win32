@@ -4,13 +4,32 @@ use crate::core::id_gen;
 use crate::history::patch::ActionPatch;
 use crate::tools::pen::PenTool;
 use rust_i18n::t;
-use crate::app::state::{AnimPatch, AppMode};
+use crate::app::state::AppMode;
+use crate::app::handlers::{anim_handler, layer_handler};
 
 pub struct CommandHandler;
 
 impl CommandHandler {
     pub fn execute(app_state: &mut AppState, cmd: AppCommand) {
         match cmd {
+            AppCommand::ToggleLayerLock(_) | AppCommand::SetLayerOpacity(_, _) |
+            AppCommand::SetLayerBlendMode(_, _) | AppCommand::MoveLayerUp(_) |
+            AppCommand::MoveLayerDown(_) | AppCommand::MoveLayerToIndex(_, _) |
+            AppCommand::RenameLayer(_, _) | AppCommand::DuplicateLayer(_) |
+            AppCommand::MergeSelected(_) => {
+                layer_handler::execute(app_state, cmd);
+                return;
+            }
+            AppCommand::CreateAnimation(_) | AppCommand::SelectAnimation(_) |
+            AppCommand::DeleteKeyframe(_, _, _) | AppCommand::UpdateKeyframeCurve(_, _, _, _) |
+            AppCommand::MoveSelectedKeyframes(_) | AppCommand::BeginOffsetSnapshot |
+            AppCommand::CommitOffsetSnapshot | AppCommand::OffsetSelectedKeyframes(_) |
+            AppCommand::ApplySpineOffset { .. } | AppCommand::InsertManualKeyframe(_) |
+            AppCommand::TogglePlayback | AppCommand::StepFrame(_) | AppCommand::SetTime(_) |
+            AppCommand::SetPlaybackSpeed(_) | AppCommand::ToggleLoop | AppCommand::ToggleTimelineFilter(_) => {
+                anim_handler::execute(app_state, cmd);
+                return;
+            }
             AppCommand::RequestExit => {
                 if app_state.is_dirty {
                     app_state.ui.show_exit_modal = true;
@@ -63,91 +82,6 @@ impl CommandHandler {
             }
             AppCommand::SetPrimaryColor(color) => app_state.engine.set_primary_color(color),
             
-            AppCommand::ToggleLayerLock(id) => {
-                if let Some(layer) = app_state.engine.store().get_layer(&id) {
-                    let old_lock = layer.locked;
-                    let patch = ActionPatch::new_layer_lock(id_gen::gen_id(), id.clone(), old_lock, !old_lock);
-                    if let Err(e) = app_state.engine.commit_patch(patch) { app_state.ui.error_message = Some(e.to_string()); }
-                    else { app_state.is_dirty = true; }
-                }
-            }
-            AppCommand::SetLayerOpacity(id, opacity) => {
-                if let Some(layer) = app_state.engine.store().get_layer(&id) {
-                    let old_opacity = layer.opacity;
-                    if old_opacity != opacity {
-                        let patch = ActionPatch::new_layer_opacity(id_gen::gen_id(), id.clone(), old_opacity, opacity);
-                        if let Err(e) = app_state.engine.commit_patch(patch) { app_state.ui.error_message = Some(e.to_string()); }
-                        else { app_state.is_dirty = true; app_state.view.needs_full_redraw = true; }
-                    }
-                }
-            }
-            AppCommand::SetLayerBlendMode(id, mode) => {
-                if let Some(layer) = app_state.engine.store().get_layer(&id) {
-                    let old_mode = layer.blend_mode;
-                    if old_mode != mode {
-                        let patch = ActionPatch::new_layer_blend_mode(id_gen::gen_id(), id.clone(), old_mode, mode);
-                        if let Err(e) = app_state.engine.commit_patch(patch) { app_state.ui.error_message = Some(e.to_string()); }
-                        else { app_state.is_dirty = true; app_state.view.needs_full_redraw = true; }
-                    }
-                }
-            }
-            AppCommand::MoveLayerUp(id) => {
-                if let Some(idx) = app_state.engine.store().layers.iter().position(|l| l.id == id) {
-                    if idx + 1 < app_state.engine.store().layers.len() {
-                        let patch = ActionPatch::new_layer_move(id_gen::gen_id(), id.clone(), idx, idx + 1);
-                        if let Err(e) = app_state.engine.commit_patch(patch) { app_state.ui.error_message = Some(e.to_string()); }
-                        else { app_state.is_dirty = true; }
-                    }
-                }
-            }
-            AppCommand::MoveLayerDown(id) => {
-                if let Some(idx) = app_state.engine.store().layers.iter().position(|l| l.id == id) {
-                    if idx > 0 {
-                        let patch = ActionPatch::new_layer_move(id_gen::gen_id(), id.clone(), idx, idx - 1);
-                        if let Err(e) = app_state.engine.commit_patch(patch) { app_state.ui.error_message = Some(e.to_string()); }
-                        else { app_state.is_dirty = true; app_state.view.needs_full_redraw = true; }
-                    }
-                }
-            }
-
-            AppCommand::MoveLayerToIndex(id, new_idx) => {
-                if let Some(old_idx) = app_state.engine.store().layers.iter().position(|l| l.id == id) {
-                    if old_idx != new_idx {
-                        let target_idx = new_idx.min(app_state.engine.store().layers.len().saturating_sub(1));
-                        let patch = ActionPatch::new_layer_move(id_gen::gen_id(), id.clone(), old_idx, target_idx);
-                        if let Err(e) = app_state.engine.commit_patch(patch) { app_state.ui.error_message = Some(e.to_string()); }
-                        else { app_state.is_dirty = true; app_state.view.needs_full_redraw = true; }
-                    }
-                }
-            }
-
-            AppCommand::RenameLayer(id, new_name) => {
-                if let Some(layer) = app_state.engine.store().get_layer(&id) {
-                    let trimmed_name = new_name.trim().to_string();
-                    if !trimmed_name.is_empty() && layer.name != trimmed_name {
-                        let mut final_name = trimmed_name.clone();
-                        let mut counter = 1;
-
-                        while app_state.engine.store().layers.iter().any(|l| l.id != id && l.name == final_name) {
-                            counter += 1;
-                            final_name = format!("{} ({})", trimmed_name, counter);
-                        }
-
-                        let patch = ActionPatch::new_layer_rename(id_gen::gen_id(), id.clone(), layer.name.clone(), final_name);
-                        if let Err(e) = app_state.engine.commit_patch(patch) { app_state.ui.error_message = Some(e.to_string()); }
-                        else { app_state.is_dirty = true; }
-                    }
-                }
-            }
-
-            AppCommand::DuplicateLayer(id) => {
-                if let Err(e) = app_state.engine.duplicate_layer(&id) { app_state.ui.error_message = Some(e.to_string()); }
-                else { app_state.is_dirty = true; app_state.view.needs_full_redraw = true; }
-            }
-            AppCommand::MergeSelected(ids) => {
-                if let Err(e) = app_state.engine.merge_selected_layers(ids) { app_state.ui.error_message = Some(e.to_string()); }
-                else { app_state.is_dirty = true; app_state.view.needs_full_redraw = true; }
-            }
             AppCommand::ClearSelection => {
                 if app_state.engine.store().selection.is_active {
                     let old = app_state.engine.store().selection.clone();
@@ -296,201 +230,6 @@ impl CommandHandler {
                     }
                 }
             }
-            AppCommand::CreateAnimation(name) => {
-                let id = crate::core::id_gen::gen_id();
-                let mut anim = crate::core::animation::timeline::Animation::new(name.clone(), 2.0);
-                anim.initialize_tracks(&app_state.animation.project.skeleton);
-                app_state.animation.project.animations.insert(id.clone(), anim);
-                app_state.animation.project.active_animation_id = Some(id);
-                app_state.animation.current_time = 0.0;
-                app_state.is_dirty = true;
-            }
-            AppCommand::SelectAnimation(id) => {
-                if app_state.animation.project.animations.contains_key(&id) {
-                    app_state.animation.project.active_animation_id = Some(id);
-                    app_state.animation.current_time = 0.0;
-                    crate::animation::controller::AnimationController::apply_current_pose(&mut app_state.animation);
-                    app_state.view.needs_full_redraw = true;
-                }
-            }
-
-            AppCommand::DeleteKeyframe(bone_id, prop_opt, time) => {
-                if let Some(active_id) = app_state.animation.project.active_animation_id.clone() {
-                    let mut old_tls = Vec::new();
-                    if let Some(anim) = app_state.animation.project.animations.get(&active_id) {
-                        for tl in &anim.timelines {
-                            if tl.target_id == bone_id {
-                                if let Some(ref prop) = prop_opt { if &tl.property != prop { continue; } }
-                                old_tls.push(tl.clone());
-                            }
-                        }
-                    }
-                    if let Some(anim) = app_state.animation.project.animations.get_mut(&active_id) {
-                        for tl in &mut anim.timelines {
-                            if tl.target_id == bone_id {
-                                if let Some(prop) = &prop_opt {
-                                    if &tl.property != prop { continue; }
-                                }
-                                tl.keyframes.retain(|k| (k.time - time).abs() > 0.001);
-                            }
-                        }
-                        anim.recalculate_duration();
-                        app_state.is_dirty = true;
-                        app_state.view.needs_full_redraw = true;
-                        crate::animation::controller::AnimationController::apply_current_pose(&mut app_state.animation);
-                    }
-                    let mut patches = Vec::new();
-                    for old_tl in old_tls {
-                        let new_tl = app_state.animation.project.animations.get(&active_id)
-                            .and_then(|a| a.timelines.iter().find(|t| t.target_id == old_tl.target_id && t.property == old_tl.property))
-                            .cloned();
-                        patches.push(AnimPatch::Timeline { anim_id: active_id.clone(), bone_id: old_tl.target_id.clone(), prop: old_tl.property.clone(), old: Some(old_tl), new: new_tl });
-                    }
-                    if !patches.is_empty() { app_state.animation.history.commit(AnimPatch::Composite(patches)); }
-                }
-            }
-
-            AppCommand::UpdateKeyframeCurve(bone_id, prop, time, curve) => {
-                if let Some(active_id) = app_state.animation.project.active_animation_id.clone() {
-                    let old_tl = app_state.animation.project.animations.get(&active_id)
-                        .and_then(|a| a.timelines.iter().find(|t| t.target_id == bone_id && t.property == prop)).cloned();
-                    if let Some(anim) = app_state.animation.project.animations.get_mut(&active_id) {
-                        for tl in &mut anim.timelines {
-                            if tl.target_id == bone_id && tl.property == prop {
-                                if let Some(kf) = tl.keyframes.iter_mut().find(|k| (k.time - time).abs() < 0.001) {
-                                    kf.curve = curve;
-                                }
-                            }
-                        }
-                        app_state.is_dirty = true;
-                        app_state.view.needs_full_redraw = true;
-                    }
-                    let new_tl = app_state.animation.project.animations.get(&active_id)
-                        .and_then(|a| a.timelines.iter().find(|t| t.target_id == bone_id && t.property == prop)).cloned();
-                    if let (Some(old), Some(new)) = (old_tl, new_tl) {
-                        app_state.animation.history.commit(AnimPatch::Timeline { anim_id: active_id, bone_id, prop, old: Some(old), new: Some(new) });
-                    }
-                }
-            }
-            AppCommand::MoveSelectedKeyframes(dt) => {
-                if let Some(active_id) = app_state.animation.project.active_animation_id.clone() {
-                    let mut old_tls = Vec::new();
-                    if let Some(anim) = app_state.animation.project.animations.get(&active_id) {
-                        for (bone_id, prop_opt, _) in &app_state.ui.selected_keyframes {
-                            if let Some(tl) = anim.timelines.iter().find(|t| &t.target_id == bone_id && prop_opt.as_ref().map_or(true, |p| &t.property == p)) {
-                                if !old_tls.iter().any(|existing: &crate::core::animation::timeline::Timeline| existing.target_id == tl.target_id && existing.property == tl.property) {
-                                    old_tls.push(tl.clone());
-                                }
-                            }
-                        }
-                    }
-                    if let Some(anim) = app_state.animation.project.animations.get_mut(&active_id) {
-                        let mut new_selection = Vec::new();
-                        for (bone_id, prop_opt, t) in &app_state.ui.selected_keyframes {
-                            let new_time = (*t + dt).max(0.0);
-                            new_selection.push((bone_id.clone(), prop_opt.clone(), new_time));
-                            for tl in &mut anim.timelines {
-                                if &tl.target_id == bone_id {
-                                    if let Some(prop) = prop_opt { if &tl.property != prop { continue; } }
-                                    if let Some(kf) = tl.keyframes.iter_mut().find(|k| (k.time - *t).abs() < 0.001) { kf.time = new_time; }
-                                }
-                            }
-                        }
-                        for tl in &mut anim.timelines {
-                            tl.keyframes.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
-                        }
-                        anim.recalculate_duration();
-                        app_state.ui.selected_keyframes = new_selection;
-                        app_state.is_dirty = true;
-                    }
-                    let mut patches = Vec::new();
-                    for old_tl in old_tls {
-                        let new_tl = app_state.animation.project.animations.get(&active_id)
-                            .and_then(|a| a.timelines.iter().find(|t| t.target_id == old_tl.target_id && t.property == old_tl.property))
-                            .cloned();
-                        patches.push(AnimPatch::Timeline { anim_id: active_id.clone(), bone_id: old_tl.target_id.clone(), prop: old_tl.property.clone(), old: Some(old_tl), new: new_tl });
-                    }
-                    if !patches.is_empty() { app_state.animation.history.commit(AnimPatch::Composite(patches)); }
-                }
-            }
-            AppCommand::ApplySpineOffset { mode, fixed_frames, step_frames } => {
-                if let Some(active_id) = app_state.animation.project.active_animation_id.clone() {
-                    let mut old_tls = Vec::new();
-                    if let Some(anim) = app_state.animation.project.animations.get(&active_id) {
-                        for (bone_id, prop_opt, _) in &app_state.ui.selected_keyframes {
-                            if let Some(tl) = anim.timelines.iter().find(|t| &t.target_id == bone_id && prop_opt.as_ref().map_or(true, |p| &t.property == p)) {
-                                if !old_tls.iter().any(|existing: &crate::core::animation::timeline::Timeline| existing.target_id == tl.target_id && existing.property == tl.property) { 
-                                    old_tls.push(tl.clone()); 
-                                }
-                            }
-                        }
-                    }
-
-                    let fps = 30.0;
-                    let n_sec = fixed_frames as f32 / fps;
-
-                    if let Some(anim) = app_state.animation.project.animations.get_mut(&active_id) {
-                        let duration = anim.duration;
-                        if duration <= 0.0 { return; }
-
-                        let mut bone_offsets = std::collections::HashMap::new();
-                        let mut bone_order = Vec::new();
-                        for (b_id, _, _) in &app_state.ui.selected_keyframes {
-                            if !bone_order.contains(b_id) { bone_order.push(b_id.clone()); }
-                        }
-                        for (idx, b_id) in bone_order.iter().enumerate() {
-                            let step_sec = match mode {
-                                1 => 1.0 / fps,
-                                2 => step_frames as f32 / fps,
-                                _ => 0.0,
-                            };
-                            bone_offsets.insert(b_id.clone(), n_sec + (idx as f32 * step_sec));
-                        }
-
-                        let mut new_selection = Vec::new();
-                        let selected_copy = app_state.ui.selected_keyframes.clone();
-                        
-                        for tl in &mut anim.timelines {
-                            if let Some(&dt) = bone_offsets.get(&tl.target_id) {
-                                let affected_times: Vec<f32> = selected_copy.iter()
-                                    .filter(|(b, p, _)| b == &tl.target_id && p.as_ref().map_or(true, |prop| prop == &tl.property))
-                                    .map(|(_, _, t)| *t).collect();
-                                
-                                if affected_times.is_empty() { continue; }
-
-                                let wrap_source_time = (0.0 - dt).rem_euclid(duration);
-                                let wrap_value = tl.sample(wrap_source_time);
-
-                                for kf in &mut tl.keyframes {
-                                    if affected_times.iter().any(|&at| (at - kf.time).abs() < 0.001) {
-                                        kf.time = (kf.time + dt).rem_euclid(duration);
-                                        new_selection.push((tl.target_id.clone(), Some(tl.property.clone()), kf.time));
-                                    }
-                                }
-
-                                if let Some(val) = wrap_value {
-                                    tl.add_keyframe(0.0, val.clone(), crate::core::animation::timeline::CurveType::Linear);
-                                    tl.add_keyframe(duration, val, crate::core::animation::timeline::CurveType::Linear);
-                                }
-                            }
-                        }
-                        for tl in &mut anim.timelines {
-                            tl.keyframes.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
-                        }
-                        app_state.ui.selected_keyframes = new_selection;
-                        app_state.is_dirty = true;
-                        app_state.view.needs_full_redraw = true;
-                    }
-                    let mut patches = Vec::new();
-                    for old_tl in old_tls {
-                        let new_tl = app_state.animation.project.animations.get(&active_id)
-                            .and_then(|a| a.timelines.iter().find(|t| t.target_id == old_tl.target_id && t.property == old_tl.property))
-                            .cloned();
-                        patches.push(AnimPatch::Timeline { anim_id: active_id.clone(), bone_id: old_tl.target_id.clone(), prop: old_tl.property.clone(), old: Some(old_tl), new: new_tl });
-                    }
-                    if !patches.is_empty() { app_state.animation.history.commit(AnimPatch::Composite(patches)); }
-                }
-            }
             AppCommand::ChangeBrushSize(delta) => {
                 let (size, _, _) = app_state.engine.brush_settings_mut();
                 *size = (*size as i32 + delta).clamp(1, 20) as u32;
@@ -527,59 +266,6 @@ impl CommandHandler {
             }
             AppCommand::ToggleTransformCoordinateSystem => {
                 app_state.ui.show_world_transform = !app_state.ui.show_world_transform;
-            }
-            AppCommand::InsertManualKeyframe(bone_id) => {
-                if let Some(active_id) = app_state.animation.project.active_animation_id.clone() {
-                    let mut patches = Vec::new();
-                    let props = [
-                        crate::core::animation::timeline::TimelineProperty::Translation,
-                        crate::core::animation::timeline::TimelineProperty::Rotation,
-                        crate::core::animation::timeline::TimelineProperty::Scale,
-                    ];
-
-                    for prop in props {
-                        let old_tl = app_state.animation.project.animations.get(&active_id)
-                            .and_then(|a| a.timelines.iter().find(|t| t.target_id == bone_id && t.property == prop))
-                            .cloned();
-
-                        app_state.animation.auto_key_bone(&bone_id, prop.clone());
-
-                        let new_tl = app_state.animation.project.animations.get(&active_id)
-                            .and_then(|a| a.timelines.iter().find(|t| t.target_id == bone_id && t.property == prop))
-                            .cloned();
-
-                        patches.push(AnimPatch::Timeline {
-                            anim_id: active_id.clone(),
-                            bone_id: bone_id.clone(),
-                            prop,
-                            old: old_tl,
-                            new: new_tl,
-                        });
-                    }
-                    app_state.animation.history.commit(AnimPatch::Composite(patches));
-                    app_state.is_dirty = true;
-                    app_state.view.needs_full_redraw = true;
-                }
-            }
-            AppCommand::TogglePlayback => app_state.animation.is_playing = !app_state.animation.is_playing,
-            AppCommand::StepFrame(frames) => {
-                app_state.animation.current_time = (app_state.animation.current_time + frames as f32 / 30.0).max(0.0);
-                crate::animation::controller::AnimationController::apply_current_pose(&mut app_state.animation);
-                app_state.is_dirty = true;
-            }
-            AppCommand::SetTime(time) => {
-                app_state.animation.current_time = time.max(0.0);
-                crate::animation::controller::AnimationController::apply_current_pose(&mut app_state.animation);
-                app_state.is_dirty = true;
-            }
-            AppCommand::SetPlaybackSpeed(speed) => app_state.animation.playback_speed = speed.max(0.1),
-            AppCommand::ToggleLoop => app_state.animation.is_looping = !app_state.animation.is_looping,
-            AppCommand::ToggleTimelineFilter(prop) => {
-                if let Some(pos) = app_state.ui.timeline_filter.iter().position(|p| p == &prop) {
-                    app_state.ui.timeline_filter.remove(pos);
-                } else {
-                    app_state.ui.timeline_filter.push(prop);
-                }
             }
             _ => {}
         }

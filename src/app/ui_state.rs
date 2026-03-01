@@ -35,6 +35,10 @@ pub struct UiState {
     pub show_world_transform: bool,
     pub auto_keyframe: bool,
     pub timeline_filter: Vec<crate::core::animation::timeline::TimelineProperty>,
+    pub offset_drag_start_x: Option<f32>,
+    pub offset_snapshot_anim: Option<crate::core::animation::timeline::Animation>,
+    pub offset_snapshot_selection: Vec<(String, Option<crate::core::animation::timeline::TimelineProperty>, f32)>,
+    pub is_offset_mode_active: bool,
 }
 
 impl UiState {
@@ -78,6 +82,10 @@ impl UiState {
             show_world_transform: false,
             auto_keyframe: true,
             timeline_filter: filter,
+            offset_drag_start_x: None,
+            offset_snapshot_anim: None,
+            offset_snapshot_selection: Vec::new(),
+            is_offset_mode_active: false,
         }
     }
 }

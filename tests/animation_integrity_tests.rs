@@ -2,7 +2,7 @@ use pxa_engine_win32::app::state::{AppState, AppMode, ToolType};
 use pxa_engine_win32::app::commands::AppCommand;
 use pxa_engine_win32::app::command_handler::CommandHandler;
 use pxa_engine_win32::core::animation::bone::BoneData;
-use pxa_engine_win32::core::animation::timeline::{TimelineProperty, KeyframeValue, CurveType};
+use pxa_engine_win32::core::animation::timeline::TimelineProperty;
 
 fn setup_test_context() -> AppState {
     let mut app = AppState::new();

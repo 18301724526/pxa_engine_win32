@@ -3,7 +3,7 @@ use pxa_engine_win32::core::animation::bone::BoneData;
 use pxa_engine_win32::core::animation::skeleton::Skeleton;
 use pxa_engine_win32::app::commands::AppCommand;
 use pxa_engine_win32::app::command_handler::CommandHandler;
-use pxa_engine_win32::core::animation::timeline::{TimelineProperty, KeyframeValue, CurveType, Timeline};
+use pxa_engine_win32::core::animation::timeline::{TimelineProperty, KeyframeValue, CurveType};
 use pxa_engine_win32::ui::timeline::TimelinePanel;
 use egui::{Context, RawInput, Event, pos2, PointerButton};
 
@@ -265,15 +265,23 @@ fn test_spine_cyclic_offset_logic() {
         anim.duration = 2.0;
 
         let tl1 = anim.timelines.iter_mut().find(|t| t.target_id == "B1" && t.property == TimelineProperty::Rotation).unwrap();
+        tl1.add_keyframe(0.0, KeyframeValue::Rotate(0.0), CurveType::Linear);
         tl1.add_keyframe(1.8, KeyframeValue::Rotate(10.0), CurveType::Linear);
+        tl1.add_keyframe(2.0, KeyframeValue::Rotate(0.0), CurveType::Linear);
 
         let tl2 = anim.timelines.iter_mut().find(|t| t.target_id == "B2" && t.property == TimelineProperty::Rotation).unwrap();
+        tl2.add_keyframe(0.0, KeyframeValue::Rotate(0.0), CurveType::Linear);
         tl2.add_keyframe(1.8, KeyframeValue::Rotate(20.0), CurveType::Linear);
+        tl2.add_keyframe(2.0, KeyframeValue::Rotate(0.0), CurveType::Linear);
     }
 
     app.ui.selected_keyframes = vec![
+        ("B1".into(), Some(TimelineProperty::Rotation), 0.0),
         ("B1".into(), Some(TimelineProperty::Rotation), 1.8),
+        ("B1".into(), Some(TimelineProperty::Rotation), 2.0),
+        ("B2".into(), Some(TimelineProperty::Rotation), 0.0),
         ("B2".into(), Some(TimelineProperty::Rotation), 1.8),
+        ("B2".into(), Some(TimelineProperty::Rotation), 2.0),
     ];
 
     CommandHandler::execute(&mut app, AppCommand::ApplySpineOffset { mode: 1, fixed_frames: 15, step_frames: 1 });
