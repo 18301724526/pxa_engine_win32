@@ -12,7 +12,17 @@ impl EyedropperTool {
 
 impl Tool for EyedropperTool {
     fn on_pointer_down(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
-        let picked_color = store.get_composite_pixel(x, y);
+        let mut picked_color = store.get_composite_pixel(x, y);
+        
+        // 如果点到了透明区域，则根据坐标计算并拾取网格背景色
+        if picked_color.a == 0 {
+            let is_even = ((x >> 3) + (y >> 3)) % 2 == 0;
+            picked_color = if is_even { 
+                crate::core::color::Color::new(35, 35, 35, 255) 
+            } else { 
+                crate::core::color::Color::new(30, 30, 30, 255) 
+            };
+        }
         store.primary_color = picked_color;
         Ok(())
     }

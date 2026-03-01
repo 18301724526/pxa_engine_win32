@@ -286,6 +286,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     AppMode::Animation => {
                         AnimationController::update(&mut app_state.animation, dt);
+                        app_state.sync_animation_to_layers();
                         Compositor::render(app_state.engine.store(), pixels.frame_mut(), viewport);
                         AnimCompositor::render_cpu(app_state.engine.store(), &app_state.animation.project.skeleton, pixels.frame_mut(), viewport, app_state.ui.selected_bone_id.as_ref());
                         anim_renderer.prepare_textures(pixels.device(), pixels.queue(), app_state.engine.store(), &app_state.animation.project.skeleton);

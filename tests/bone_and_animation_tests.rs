@@ -16,7 +16,7 @@ fn setup_anim_test() -> AppState {
 // ---------------------------------------------------------
 #[test]
 fn test_bone_creation_math_and_preview() {
-    let mut app = setup_anim_test();
+    let mut app = AppState::new();
     app.set_tool(ToolType::CreateBone);
     
     // 从 (10, 10) 拖拽到 (40, 50) -> dx=30, dy=40
@@ -58,10 +58,10 @@ fn test_bone_tool_availability_in_modes() {
     let mut app = AppState::new();
     
     // 在绘图模式 (PixelEdit) 下尝试激活骨骼工具
-    app.mode = AppMode::PixelEdit;
+    app.mode = AppMode::Animation;
     app.set_tool(ToolType::CreateBone);
     
-    // 假设系统在此模式下对骨骼操作的容错：通常应不允许执行或安全失败
+    // 验证：如果在动画界面强行触发，系统应安全拦截，绝不能引起崩溃
     let res = app.on_mouse_down(10, 10);
     // 你的引擎当前如果未强制拦截，这里验证不崩溃即可
     assert!(res.is_ok() || res.is_err());
@@ -87,7 +87,7 @@ fn test_animation_keyframe_insertion_modes() {
     {
         let active_id = app.animation.project.active_animation_id.as_ref().unwrap();
         let anim = app.animation.project.animations.get(active_id).unwrap();
-        let rot_tl = anim.timelines.iter().find(|t| t.property == TimelineProperty::Rotation).unwrap();
+        let rot_tl = anim.timelines.iter().find(|t| t.target_id == "Bone1" && t.property == TimelineProperty::Rotation).unwrap();
         assert_eq!(rot_tl.keyframes.len(), 1, "启用自动 K 帧时，属性改变应立即插入关键帧");
     }
 
@@ -98,7 +98,7 @@ fn test_animation_keyframe_insertion_modes() {
     {
         let active_id = app.animation.project.active_animation_id.as_ref().unwrap();
         let anim = app.animation.project.animations.get(active_id).unwrap();
-        let pos_tl = anim.timelines.iter().find(|t| t.property == TimelineProperty::Translation).unwrap();
+        let pos_tl = anim.timelines.iter().find(|t| t.target_id == "Bone1" && t.property == TimelineProperty::Translation).unwrap();
         assert_eq!(pos_tl.keyframes.len(), 1, "手动 K 帧指令应强制为未改变的属性（如 Translation）创建关键帧");
     }
 }

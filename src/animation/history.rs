@@ -13,6 +13,11 @@ pub enum AnimPatch {
         old: crate::core::animation::skeleton::Skeleton, 
         new: crate::core::animation::skeleton::Skeleton 
     },
+    SlotBone {
+        slot_id: String,
+        old_bone: String,
+        new_bone: String,
+    },
     Composite(Vec<AnimPatch>),
 }
 
@@ -59,6 +64,11 @@ impl AnimHistory {
                 }
             }
             AnimPatch::Skeleton { old, new } => { project.skeleton = if is_undo { old.clone() } else { new.clone() }; }
+            AnimPatch::SlotBone { slot_id, old_bone, new_bone } => {
+                if let Some(slot) = project.skeleton.slots.iter_mut().find(|s| s.data.id == *slot_id) {
+                    slot.data.bone_id = if is_undo { old_bone.clone() } else { new_bone.clone() };
+                }
+            }
             AnimPatch::Composite(patches) => {
                 let iter: Box<dyn Iterator<Item = &AnimPatch>> = if is_undo { Box::new(patches.iter().rev()) } else { Box::new(patches.iter()) };
                 for p in iter { self.apply_patch(project, p, is_undo); }

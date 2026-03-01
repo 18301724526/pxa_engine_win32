@@ -192,10 +192,14 @@ impl AnimCompositor {
         let zoom = v.zoom;
         let sw = v.screen_width as f32;
         let sh = v.screen_height as f32;
+
+        let c_cx = (sw * 0.5) / zoom; 
+        let c_cy = (sh * 0.5) / zoom;
+
         let scale_x = 2.0 * zoom / sw;
         let scale_y = -2.0 * zoom / sh;
-        let tx = (v.pan_x * zoom) * 2.0 / sw;
-        let ty = (v.pan_y * zoom) * 2.0 / sh;
+        let tx = ((v.pan_x - c_cx) * zoom) * (2.0 / sw) + 1.0;
+        let ty = ((v.pan_y - c_cy) * zoom) * (-2.0 / sh) - 1.0;
         [[scale_x, 0.0, 0.0, 0.0], [0.0, scale_y, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [tx, ty, 0.0, 1.0]]
     }
 
@@ -234,8 +238,8 @@ impl AnimCompositor {
             };
             
             let m = bone.world_matrix;
-            let root_x = m[4];
-            let root_y = m[5];
+            let root_x = m[4].round();
+            let root_y = m[5].round();
             let length = bone.data.length;
 
             if length < 1.0 {

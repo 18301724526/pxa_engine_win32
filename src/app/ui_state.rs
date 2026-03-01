@@ -39,6 +39,8 @@ pub struct UiState {
     pub offset_snapshot_anim: Option<crate::core::animation::timeline::Animation>,
     pub offset_snapshot_selection: Vec<(String, Option<crate::core::animation::timeline::TimelineProperty>, f32)>,
     pub is_offset_mode_active: bool,
+    pub expanded_bones: std::collections::HashSet<String>,
+    pub drag_target_bone_id: Option<String>,
 }
 
 impl UiState {
@@ -86,6 +88,8 @@ impl UiState {
             offset_snapshot_anim: None,
             offset_snapshot_selection: Vec::new(),
             is_offset_mode_active: false,
+            expanded_bones: std::collections::HashSet::new(),
+            drag_target_bone_id: None,
         }
     }
 }

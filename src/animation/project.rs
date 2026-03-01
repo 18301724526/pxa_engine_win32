@@ -11,8 +11,10 @@ pub struct AnimProject {
 
 impl Default for AnimProject {
     fn default() -> Self {
+        let mut skeleton = Skeleton::new();
+        skeleton.add_bone(crate::core::animation::bone::BoneData::new("root".into(), "root".into()));
         Self {
-            skeleton: Skeleton::new(),
+            skeleton,
             animations: HashMap::new(),
             active_animation_id: None,
         }

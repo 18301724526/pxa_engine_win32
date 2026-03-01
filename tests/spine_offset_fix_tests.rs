@@ -33,10 +33,8 @@ fn test_spine_offset_loop_maintenance() {
     CommandHandler::execute(&mut app, AppCommand::ApplySpineOffset { mode: 0, fixed_frames: 30, step_frames: 0 });
 
     let anim = app.animation.project.animations.get(&anim_id).unwrap();
-    let tl = &anim.timelines[0];
+    let tl = anim.timelines.iter().find(|t| t.target_id == "B1" && t.property == TimelineProperty::Rotation).expect("找不到 B1 的旋转轨道");
 
-    // 验证 1：原 1.0s 的帧（90度）现在应该移动到 2.0s 并 wrap 到 0.0s
-    // 验证 2：补帧逻辑必须确保 0.0s 处有值。由于偏移了 1s，现在的 0.0s 应该是原 1.0s 的值（90度）
     let val_at_0 = tl.sample(0.0).unwrap();
     if let KeyframeValue::Rotate(deg) = val_at_0 {
         assert!((deg - 90.0).abs() < 0.001, "偏移后 0.0s 必须补齐正确的插值（预期 90.0, 实际 {}）", deg);
@@ -44,6 +42,7 @@ fn test_spine_offset_loop_maintenance() {
 
     // 验证 3：撤销偏移
     CommandHandler::execute(&mut app, AppCommand::Undo);
-    let tl_restored = &app.animation.project.animations.get(&anim_id).unwrap().timelines[0];
-    assert!((tl_restored.sample(1.0).map(|v| match v { KeyframeValue::Rotate(d) => d, _ => 0.0 }).unwrap() - 90.0).abs() < 0.001);
+    let anim_restored = app.animation.project.animations.get(&anim_id).expect("找不到动画");
+    let tl_restored = anim_restored.timelines.iter().find(|t| t.target_id == "B1" && t.property == TimelineProperty::Rotation).expect("撤销后找不到 B1 轨道");
+    assert!((tl_restored.sample(1.0).map(|v| match v { KeyframeValue::Rotate(d) => d, _ => 0.0 }).expect("采样失败") - 90.0).abs() < 0.001);
 }

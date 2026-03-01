@@ -267,6 +267,7 @@ impl Dopesheet {
         if let Some(t) = new_seek_time {
             app.animation.current_time = t;
             crate::animation::controller::AnimationController::apply_current_pose(&mut app.animation);
+            app.sync_animation_to_layers();
         }
 
         if app.animation.is_playing && app.animation.is_looping {

@@ -17,6 +17,7 @@ impl InputHandler {
                     app.animation.drag_start_animation = Some(anim.clone());
                 }
             }
+            let click_res = Self::handle_animation_click(app, x, y);
             if let Some(tool) = app.engine.tool_manager_mut().tools.get_mut(&ToolType::CreateBone) {
                 if let Some(bone_tool) = tool.as_any_mut().downcast_mut::<crate::tools::create_bone::CreateBoneTool>() {
                     bone_tool.parent_bone_id = app.ui.selected_bone_id.clone();
@@ -26,9 +27,8 @@ impl InputHandler {
                 let (store, symmetry, tool_manager) = app.engine.parts_mut();
                 let _ = tool_manager.handle_pointer_down(x, y, store, symmetry);
                 return Ok(());
-            } else {
-                return Self::handle_animation_click(app, x, y);
             }
+            return click_res;
         }
 
         if app.engine.tool_manager().active_type == ToolType::CreateBone {
@@ -64,9 +64,9 @@ impl InputHandler {
 
             if app.engine.tool_manager().is_drawing {
                 let tool = app.engine.tool_manager().active_type;
-                if let Some(bone_id) = &app.ui.selected_bone_id {
+                if let Some(bone_id) = app.ui.selected_bone_id.clone() {
                     let skeleton = &mut app.animation.project.skeleton;
-                    if let Some(bone_idx) = skeleton.bones.iter().position(|b| b.data.id == *bone_id) {
+                    if let Some(bone_idx) = skeleton.bones.iter().position(|b| b.data.id == bone_id) {
                         let mut changed = false;
                         match tool {
                             ToolType::BoneRotate => {
@@ -105,6 +105,7 @@ impl InputHandler {
                             app.is_dirty = true;
                             app.view.needs_full_redraw = true;
                             skeleton.update();
+                            app.sync_animation_to_layers();
 
                             let prop = match tool {
                                 ToolType::BoneRotate => Some(crate::core::animation::timeline::TimelineProperty::Rotation),
@@ -112,7 +113,7 @@ impl InputHandler {
                                 _ => None,
                             };
                             if let Some(p) = prop {
-                                app.animation.auto_key_bone(bone_id, p);
+                                app.animation.auto_key_bone(&bone_id, p);
                             }
                         }
                     }

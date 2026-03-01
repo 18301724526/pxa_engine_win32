@@ -26,7 +26,8 @@ impl CommandHandler {
             AppCommand::CommitOffsetSnapshot | AppCommand::OffsetSelectedKeyframes(_) |
             AppCommand::ApplySpineOffset { .. } | AppCommand::InsertManualKeyframe(_) |
             AppCommand::TogglePlayback | AppCommand::StepFrame(_) | AppCommand::SetTime(_) |
-            AppCommand::SetPlaybackSpeed(_) | AppCommand::ToggleLoop | AppCommand::ToggleTimelineFilter(_) => {
+            AppCommand::SetPlaybackSpeed(_) | AppCommand::ToggleLoop | AppCommand::ToggleTimelineFilter(_) |
+            AppCommand::BindLayerToBone(_, _) | AppCommand::DeleteBone(_) => {
                 anim_handler::execute(app_state, cmd);
                 return;
             }

@@ -70,7 +70,7 @@ fn test_curve_editor_update_command() {
     
     let active_id = app.animation.project.active_animation_id.as_ref().unwrap();
     let anim = app.animation.project.animations.get(active_id).unwrap();
-    let tl = anim.timelines.iter().find(|t| t.property == TimelineProperty::Translation).unwrap();
+    let tl = anim.timelines.iter().find(|t| t.target_id == "Root" && t.property == TimelineProperty::Translation).unwrap();
     
     assert_eq!(tl.keyframes[0].curve, new_curve, "关键帧的曲线属性必须被正确更新并推入历史记录");
 }

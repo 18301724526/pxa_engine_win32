@@ -24,6 +24,7 @@ pub struct PixelStore {
     pub selection: SelectionData,
     pub composite_cache: Vec<u8>,
     pub active_path: BezierPath,
+    pub layer_anim_transforms: std::collections::HashMap<String, [f32; 6]>,
 }
 
 impl PixelStore {
@@ -41,6 +42,7 @@ impl PixelStore {
             selection: SelectionData::new(width, height),
             composite_cache: vec![0u8; (width * height * 4) as usize],
             active_path: BezierPath::new(),
+            layer_anim_transforms: std::collections::HashMap::new(),
         }
     }
 

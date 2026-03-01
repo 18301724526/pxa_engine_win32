@@ -62,6 +62,8 @@ pub enum AppCommand {
     TogglePathNodeType(usize),
     DeletePathNode(usize),
     ToggleTransformCoordinateSystem,
+    BindLayerToBone(String, String),
+    DeleteBone(String),
     InsertManualKeyframe(String),
     TogglePlayback,
     StepFrame(i32),

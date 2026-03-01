@@ -21,6 +21,51 @@ pub fn execute(app_state: &mut AppState, cmd: AppCommand) {
                 app_state.view.needs_full_redraw = true;
             }
         }
+        AppCommand::BindLayerToBone(layer_id, target_bone) => {
+            let (bx, by) = app_state.animation.project.skeleton.get_bone_world_position(&target_bone).unwrap_or((0.0, 0.0));
+
+            if let Some(slot) = app_state.animation.project.skeleton.slots.iter_mut().find(|s| s.data.id == layer_id) {
+                if slot.data.bone_id != target_bone {
+                    let old_bone = slot.data.bone_id.clone();
+                    slot.data.bone_id = target_bone.clone();
+
+                    if let Some(layer) = app_state.engine.parts_mut().0.get_layer_mut(&layer_id) {
+                        layer.anim_offset_x = 0;
+                        layer.anim_offset_y = 0;
+                    }
+                    app_state.animation.history.commit(AnimPatch::SlotBone { slot_id: layer_id, old_bone, new_bone: target_bone });
+                    app_state.is_dirty = true;
+                    app_state.view.needs_full_redraw = true;
+                    app_state.sync_animation_to_layers();
+                }
+            }
+        }
+        AppCommand::DeleteBone(bone_id) => {
+            let old_skel = app_state.animation.project.skeleton.clone();
+            let parent_id = app_state.animation.project.skeleton.bones.iter()
+                .find(|b| b.data.id == bone_id).and_then(|b| b.data.parent_id.clone());
+            
+            let bind_target = parent_id.unwrap_or_else(|| "root".to_string());
+            for slot in &mut app_state.animation.project.skeleton.slots {
+                if slot.data.bone_id == bone_id { slot.data.bone_id = bind_target.clone(); }
+            }
+            for bone in &mut app_state.animation.project.skeleton.bones {
+                if bone.data.parent_id.as_deref() == Some(&bone_id) { bone.data.parent_id = Some(bind_target.clone()); }
+            }
+            if let Some(anim_id) = &app_state.animation.project.active_animation_id {
+                if let Some(anim) = app_state.animation.project.animations.get_mut(anim_id) {
+                    anim.timelines.retain(|tl| tl.target_id != bone_id);
+                }
+            }
+            app_state.animation.project.skeleton.bones.retain(|b| b.data.id != bone_id);
+            app_state.animation.history.commit(AnimPatch::Skeleton { old: old_skel, new: app_state.animation.project.skeleton.clone() });
+            
+            if app_state.ui.selected_bone_id.as_deref() == Some(&bone_id) {
+                app_state.ui.selected_bone_id = None;
+            }
+            app_state.is_dirty = true;
+            app_state.view.needs_full_redraw = true;
+        }
         AppCommand::DeleteKeyframe(bone_id, prop_opt, time) => {
             if let Some(active_id) = app_state.animation.project.active_animation_id.clone() {
                 let mut old_tls = Vec::new();
@@ -268,6 +313,10 @@ pub fn execute(app_state: &mut AppState, cmd: AppCommand) {
                         None => continue,
                     };
 
+                    if tl.keyframes.is_empty() {
+                        continue;
+                    }
+
                     let selected_times: Vec<f32> = app_state.ui.selected_keyframes.iter()
                         .filter(|(b, p, _)| b == &tl.target_id && p.as_ref().map_or(true, |prop| prop == &tl.property))
                         .map(|(_, _, t)| *t).collect();
@@ -368,11 +417,13 @@ pub fn execute(app_state: &mut AppState, cmd: AppCommand) {
         AppCommand::StepFrame(frames) => {
             app_state.animation.current_time = (app_state.animation.current_time + frames as f32 / 30.0).max(0.0);
             crate::animation::controller::AnimationController::apply_current_pose(&mut app_state.animation);
+            app_state.sync_animation_to_layers();
             app_state.is_dirty = true;
         }
         AppCommand::SetTime(time) => {
             app_state.animation.current_time = time.max(0.0);
             crate::animation::controller::AnimationController::apply_current_pose(&mut app_state.animation);
+            app_state.sync_animation_to_layers();
             app_state.is_dirty = true;
         }
         AppCommand::SetPlaybackSpeed(speed) => app_state.animation.playback_speed = speed.max(0.1),

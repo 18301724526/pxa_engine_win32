@@ -23,17 +23,17 @@ fn test_bone_transform_undo() {
     // 修复：将起点设为 100，终点设为 50，以产生 -50 的位移，同时避免 u32 负号错误
     app.on_mouse_down(100, 100).unwrap();
     app.on_mouse_move(100, 50).unwrap();
-    let angle_after_move = app.animation.project.skeleton.bones[0].local_transform.rotation;
+    let angle_after_move = app.animation.project.skeleton.bones.iter().find(|b| b.data.id == "Bone1").unwrap().local_transform.rotation;
     assert_ne!(angle_after_move, 0.0);
     app.on_mouse_up().unwrap();
 
     // 2. 执行撤销
     CommandHandler::execute(&mut app, AppCommand::Undo);
-    assert_eq!(app.animation.project.skeleton.bones[0].local_transform.rotation, 0.0, "撤销后旋转角度应归零");
+    assert_eq!(app.animation.project.skeleton.bones.iter().find(|b| b.data.id == "Bone1").unwrap().local_transform.rotation, 0.0, "撤销后旋转角度应归零");
 
     // 3. 执行重做
     CommandHandler::execute(&mut app, AppCommand::Redo);
-    assert_eq!(app.animation.project.skeleton.bones[0].local_transform.rotation, angle_after_move, "重做后旋转角度应恢复");
+    assert_eq!(app.animation.project.skeleton.bones.iter().find(|b| b.data.id == "Bone1").unwrap().local_transform.rotation, angle_after_move, "重做后旋转角度应恢复");
 }
 
 #[test]
@@ -48,14 +48,16 @@ fn test_keyframe_crud_undo() {
     let anim_id = app.animation.project.active_animation_id.clone().unwrap();
     {
         let anim = app.animation.project.animations.get(&anim_id).unwrap();
-        assert!(anim.timelines[0].keyframes.iter().any(|k| k.time == 1.0));
+        let tl = anim.timelines.iter().find(|t| t.target_id == "Bone1" && t.property == TimelineProperty::Rotation).unwrap();
+        assert!(tl.keyframes.iter().any(|k| k.time == 1.0));
     }
 
     // 2. 撤销添加
     CommandHandler::execute(&mut app, AppCommand::Undo);
     {
         let anim_after_undo = app.animation.project.animations.get(&anim_id).unwrap();
-        assert!(anim_after_undo.timelines[0].keyframes.is_empty(), "撤销后关键帧列表应清空，但轨道应保留");
+        let tl_after = anim_after_undo.timelines.iter().find(|t| t.target_id == "Bone1" && t.property == TimelineProperty::Rotation).unwrap();
+        assert!(tl_after.keyframes.is_empty(), "撤销后关键帧列表应清空，但轨道应保留");
     }
 
     // 3. 移动关键帧并撤销
@@ -67,7 +69,8 @@ fn test_keyframe_crud_undo() {
     
     assert_eq!(app.ui.selected_keyframes[0].2, 1.0);
     CommandHandler::execute(&mut app, AppCommand::Undo);
-    assert!(app.animation.project.animations.get(&anim_id).unwrap().timelines[0].keyframes.iter().any(|k| k.time == 0.5), "移动撤销后位置应回退");
+    let tl_final = app.animation.project.animations.get(&anim_id).unwrap().timelines.iter().find(|t| t.target_id == "Bone1" && t.property == TimelineProperty::Rotation).unwrap();
+    assert!(tl_final.keyframes.iter().any(|k| k.time == 0.5), "移动撤销后位置应回退");
 }
 
 #[test]
@@ -91,5 +94,5 @@ fn test_composite_keyframe_move_undo() {
     CommandHandler::execute(&mut app, AppCommand::Undo);
     let anim_id = app.animation.project.active_animation_id.clone().unwrap();
     let anim = app.animation.project.animations.get(&anim_id).unwrap();
-    assert!(anim.timelines.iter().all(|tl| tl.keyframes[0].time == 0.0), "复合移动撤销必须同时作用于所有选中的 Timeline");
+    assert!(anim.timelines.iter().filter(|tl| !tl.keyframes.is_empty() && (tl.target_id == "Bone1" || tl.target_id == "Bone2")).all(|tl| tl.keyframes[0].time == 0.0), "复合移动撤销必须同时作用于所有选中的 Timeline");
 }

@@ -18,6 +18,7 @@ struct LayerRenderCache<'a> {
     layer: &'a Layer,
     active_chunk: Option<&'a Chunk>,
     active_chunk_coords: (i32, i32),
+    anim_transform: Option<[f32; 6]>,
 }
 
 impl Compositor {
@@ -28,6 +29,8 @@ impl Compositor {
         let s_cy = view.screen_height as f32 * 0.5;
         let c_cx = store.canvas_width as f32 * 0.5;
         let c_cy = store.canvas_height as f32 * 0.5;
+        let color_grid_a = [35, 35, 35, 255];
+        let color_grid_b = [30, 30, 30, 255];
         let color_bg_empty = [20, 20, 20, 255];
         let canvas_w = store.canvas_width;
         let canvas_h = store.canvas_height;
@@ -50,8 +53,15 @@ impl Compositor {
 
                     if ty >= 0 && ty < canvas_h as i32 && tx >= 0 && tx < canvas_w as i32 {
                         let cache_idx = ((ty as u32 * canvas_w + tx as u32) * 4) as usize;
-                        if cache_idx + 4 <= store.composite_cache.len() {
-                            row[idx..idx+4].copy_from_slice(&store.composite_cache[cache_idx..cache_idx+4]);
+                        let src = &store.composite_cache[cache_idx..cache_idx+4];
+                        
+                        let is_even = ((tx >> 3) + (ty >> 3)) % 2 == 0;
+                        let bg = if is_even { color_grid_a } else { color_grid_b };
+                        
+                        if src[3] == 255 {
+                            row[idx..idx+4].copy_from_slice(src);
+                        } else {
+                            row[idx..idx+4].copy_from_slice(&blend_pixels(bg, [src[0], src[1], src[2], src[3]], crate::core::blend_mode::BlendMode::Normal, 255));
                         }
                     } else {
                         row[idx..idx+4].copy_from_slice(&color_bg_empty);
@@ -63,8 +73,6 @@ impl Compositor {
     pub fn update_composite_cache(store: &mut PixelStore, rect: Option<(u32, u32, u32, u32)>) {
         let canvas_w = store.canvas_width;
         let canvas_h = store.canvas_height;
-        let color_grid_a = [35, 35, 35, 255];
-        let color_grid_b = [30, 30, 30, 255];
 
         let (rx, ry, rw, rh) = rect.unwrap_or((0, 0, canvas_w, canvas_h));
         let x_start = rx.clamp(0, canvas_w);
@@ -90,16 +98,26 @@ impl Compositor {
                         layer: l,
                         active_chunk: None,
                         active_chunk_coords: (-999, -999),
+                        anim_transform: store.layer_anim_transforms.get(&l.id).copied(),
                     })
                     .collect();
 
                 for tx in x_start..x_end {
-                    let is_even = ((tx >> 3) + (ty >> 3)) % 2 == 0;
-                    let mut fc = if is_even { color_grid_a } else { color_grid_b };
+                    let mut fc = [0, 0, 0, 0];
 
                     for cache in &mut layer_caches {
-                        let lx = tx as i32 - cache.layer.offset_x;
-                        let ly = ty as i32 - cache.layer.offset_y;
+                        let mut lx;
+                        let mut ly;
+                        
+                        if let Some(matrix) = cache.anim_transform {
+                            let orig_tx = matrix[0] * (tx as f32) + matrix[2] * (ty as f32) + matrix[4];
+                            let orig_ty = matrix[1] * (tx as f32) + matrix[3] * (ty as f32) + matrix[5];
+                            lx = orig_tx.round() as i32 - cache.layer.offset_x;
+                            ly = orig_ty.round() as i32 - cache.layer.offset_y;
+                        } else {
+                            lx = tx as i32 - cache.layer.offset_x - cache.layer.anim_offset_x;
+                            ly = ty as i32 - cache.layer.offset_y - cache.layer.anim_offset_y;
+                        }
 
                         if lx >= 0 && lx < cache.layer.width as i32 && ly >= 0 && ly < cache.layer.height as i32 {
                             let cx = (lx as u32) / CHUNK_SIZE;

@@ -26,12 +26,14 @@ impl TitleBar {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 if ui.selectable_label(app.mode == AppMode::PixelEdit, "🎨").on_hover_text("Paint Mode").clicked() {
                     app.mode = AppMode::PixelEdit;
+                    app.sync_animation_to_layers();
                 }
                 
                 if ui.selectable_label(app.mode == AppMode::Animation, "🎞").on_hover_text("Animate Mode").clicked() {
                     app.cancel_current_tool();
                     app.mode = AppMode::Animation;
                     app.set_tool(ToolType::Move);
+                    app.sync_animation_to_layers();
                 }
             });
             ui.separator();
