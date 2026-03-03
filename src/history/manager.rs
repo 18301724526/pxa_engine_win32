@@ -23,20 +23,24 @@ impl HistoryManager {
         Ok(())
     }
 
-    pub fn undo(&mut self, store: &mut PixelStore) -> Result<()> {
+    pub fn undo(&mut self, store: &mut PixelStore) -> Result<bool> {
         if let Some(patch) = self.undo_stack.pop() {
             self.apply_patch(&patch, store, false)?;
             self.redo_stack.push(patch);
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
 
-    pub fn redo(&mut self, store: &mut PixelStore) -> Result<()> {
+    pub fn redo(&mut self, store: &mut PixelStore) -> Result<bool> {
         if let Some(patch) = self.redo_stack.pop() {
             self.apply_patch(&patch, store, true)?;
             self.undo_stack.push(patch);
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
 
     fn apply_patch(&self, patch: &ActionPatch, store: &mut PixelStore, forward: bool) -> Result<()> {

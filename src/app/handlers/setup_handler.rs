@@ -1,5 +1,6 @@
 use crate::app::state::{AppState, AppMode};
 use crate::animation::history::AnimPatch;
+use crate::history::patch::ActionPatch;
 use crate::core::animation::bone::BoneData;
 
 pub fn bind_layer_to_bone(app_state: &mut AppState, layer_id: &str, target_bone: &str) -> Result<(), String> {
@@ -14,7 +15,9 @@ pub fn bind_layer_to_bone(app_state: &mut AppState, layer_id: &str, target_bone:
                 layer.anim_offset_x = 0;
                 layer.anim_offset_y = 0;
             }
-            app_state.anim.state.history.commit(AnimPatch::SlotBone { slot_id: layer_id.to_string(), old_bone, new_bone: target_bone.to_string() });
+            let patch = AnimPatch::SlotBone { slot_id: layer_id.to_string(), old_bone, new_bone: target_bone.to_string() };
+            let action = ActionPatch::new_animation(app_state.pixel.engine.id_gen().generate(), patch);
+            app_state.pixel.engine.commit_patch(action).map_err(|e| e.to_string())?;
             app_state.is_dirty = true;
             app_state.pixel.view.needs_full_redraw = true;
             app_state.sync_animation_to_layers();
@@ -32,15 +35,12 @@ pub fn delete_bone(app_state: &mut AppState, bone_id: &str) -> Result<(), String
         return Err("禁止删除根骨骼 (root)".into());
     }
     let old_skel = app_state.anim.state.project.skeleton.clone();
-    
-    // 1. 清理时间轴数据
+
     let mut patches = Vec::new();
 
-    // 1. 遍历并清理所有动画中的关联时间轴数据
     let anim_ids: Vec<String> = app_state.anim.state.project.animations.keys().cloned().collect();
     for anim_id in anim_ids {
         if let Some(anim) = app_state.anim.state.project.animations.get_mut(&anim_id) {
-            // 记录将被删除的时间轴用于历史记录
             for tl in anim.timelines.iter().filter(|t| t.target_id == bone_id) {
                 patches.push(AnimPatch::Timeline {
                     anim_id: anim_id.clone(),
@@ -54,15 +54,17 @@ pub fn delete_bone(app_state: &mut AppState, bone_id: &str) -> Result<(), String
             anim.recalculate_duration();
         }
     }
-    
-    // 2. 调用 P0.3 封装的底层原子删除算法维护拓扑
+
     if let Err(e) = app_state.anim.state.project.skeleton.purge_bone_atomic(bone_id) {
         return Err(e.to_string());
     }
-    
-    // 3. 提交历史并更新状态
-    patches.push(AnimPatch::Skeleton { old: old_skel, new: app_state.anim.state.project.skeleton.clone() });
-    app_state.anim.state.history.commit(AnimPatch::Composite(patches));
+
+    let mut final_patches = patches;
+    final_patches.push(AnimPatch::Skeleton { old: old_skel, new: app_state.anim.state.project.skeleton.clone() });
+
+    let patch = AnimPatch::Composite(final_patches);
+    let action = ActionPatch::new_animation(app_state.pixel.engine.id_gen().generate(), patch);
+    app_state.pixel.engine.commit_patch(action).map_err(|e| e.to_string())?;
     
     if app_state.anim.selected_bone_id.as_deref() == Some(bone_id) {
         app_state.anim.selected_bone_id = None;
@@ -126,13 +128,16 @@ pub fn create_bone(
         bone_data.local_transform.rotation = world_dy.atan2(world_dx).to_degrees();
     }
 
-    skeleton.add_bone(bone_data); // 内部会自动调用 rebuild_internal_state
+    skeleton.add_bone(bone_data);
     skeleton.update();
 
     let new_skel = skeleton.clone();
-    app_state.anim.state.history.commit(AnimPatch::Skeleton { old: old_skel, new: new_skel });
+    let patch = AnimPatch::Skeleton { old: old_skel, new: new_skel };
+    let action = ActionPatch::new_animation(app_state.pixel.engine.id_gen().generate(), patch);
+    app_state.pixel.engine.commit_patch(action).map_err(|e| e.to_string())?;
     app_state.is_dirty = true;
     app_state.pixel.view.needs_full_redraw = true;
+    app_state.sync_animation_to_layers();
 
     Ok(Some(id))
 }

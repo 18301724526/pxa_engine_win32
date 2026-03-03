@@ -56,6 +56,9 @@ impl AppState {
             shortcuts: ShortcutManager::new(),
             command_bus: CommandBus::new(),
         };
+        let w = state.pixel.engine.store().canvas_width as f32;
+        let h = state.pixel.engine.store().canvas_height as f32;
+        state.pixel.view.update_viewport(w, h);
 
         let cx = state.pixel.engine.store().canvas_width as f32 / 2.0;
         let cy = state.pixel.engine.store().canvas_height as f32 / 2.0;
@@ -119,20 +122,10 @@ impl AppState {
     }
 
     pub fn undo(&mut self) { 
-        if let Err(e) = self.pixel.engine.undo() {
-            self.command_bus.events.push_back(crate::app::command_handler::AppEvent::ShowError(e.to_string()));
-        } else {
-            self.is_dirty = true;
-            self.pixel.view.needs_full_redraw = true;
-        }
+        let _ = self.enqueue_command(Box::new(crate::app::commands::UndoCmd));
     }
     pub fn redo(&mut self) { 
-        if let Err(e) = self.pixel.engine.redo() {
-            self.command_bus.events.push_back(crate::app::command_handler::AppEvent::ShowError(e.to_string()));
-        } else {
-            self.is_dirty = true;
-            self.pixel.view.needs_full_redraw = true;
-        }
+        let _ = self.enqueue_command(Box::new(crate::app::commands::RedoCmd));
     }
     
     pub fn add_new_layer(&mut self) { 

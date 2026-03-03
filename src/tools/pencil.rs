@@ -151,14 +151,14 @@ impl Tool for PencilTool {
             let cur_y = y as i32;
             if last_x == cur_x && last_y == cur_y { return Ok(()); }
 
-            let mut is_first_point = true;
             let mut res = Ok(());
             Geometry::bresenham_line(last_x, last_y, cur_x, cur_y, |tx, ty| {
                 if res.is_err() { return; }
-                if is_first_point { is_first_point = false; return; }
                 res = self.paint_brush_at(tx, ty, store, symmetry);
             });
             res?;
+            self.paint_brush_at(cur_x, cur_y, store, symmetry)?;
+            self.paint_brush_at(cur_x, cur_y, store, symmetry)?;
             self.last_pos = Some((cur_x, cur_y));
         }
         Ok(())

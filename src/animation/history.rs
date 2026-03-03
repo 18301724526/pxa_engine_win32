@@ -1,6 +1,6 @@
 use crate::animation::project::AnimProject;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum AnimPatch {
     Timeline { 
         anim_id: String, 
@@ -19,6 +19,19 @@ pub enum AnimPatch {
         new_bone: String,
     },
     Composite(Vec<AnimPatch>),
+}
+
+impl AnimPatch {
+    /// 定义补丁是否属于“结构性修改”（如增删骨骼、绑定图层）
+    /// 结构性修改在绘画模式和动画模式都允许撤销。
+    pub fn is_structural(&self) -> bool {
+        match self {
+            AnimPatch::Skeleton { .. } => true,
+            AnimPatch::SlotBone { .. } => true,
+            AnimPatch::Composite(patches) => patches.iter().any(|p| p.is_structural()),
+            _ => false, // Timeline (K帧) 不是结构性的
+        }
+    }
 }
 
 pub struct AnimHistory {
@@ -46,7 +59,7 @@ impl AnimHistory {
             true
         } else { false }
     }
-    fn apply_patch(&self, project: &mut AnimProject, patch: &AnimPatch, is_undo: bool) {
+    pub fn apply_patch(&self, project: &mut AnimProject, patch: &AnimPatch, is_undo: bool) {
         match patch {
             AnimPatch::Timeline { anim_id, bone_id, prop, old, new } => {
                 if let Some(anim) = project.animations.get_mut(anim_id) {
@@ -73,7 +86,11 @@ impl AnimHistory {
                 }
             }
             AnimPatch::Composite(patches) => {
-                let iter: Box<dyn Iterator<Item = &AnimPatch>> = if is_undo { Box::new(patches.iter().rev()) } else { Box::new(patches.iter()) };
+                let iter: Box<dyn Iterator<Item = &AnimPatch>> = if is_undo { 
+                    Box::new(patches.iter().rev()) 
+                } else { 
+                    Box::new(patches.iter()) 
+                };
                 for p in iter { self.apply_patch(project, p, is_undo); }
             }
         }

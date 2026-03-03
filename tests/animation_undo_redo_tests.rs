@@ -78,23 +78,18 @@ fn test_keyframe_crud_undo() {
 fn test_skeleton_structure_undo_redo() {
     let mut app = setup_anim_env();
     let initial_len = app.anim.state.project.skeleton.bones.len();
-    
-    // 验证初始状态下映射存在
+
     assert!(app.anim.state.project.skeleton.bone_id_to_index("Bone1").is_some());
 
-    // 1. 切换到绘画模式以满足 P1.2 的 Guard 条件，并删除骨骼
     app.mode = AppMode::PixelEdit;
     pxa_engine_win32::app::handlers::setup_handler::delete_bone(&mut app, "Bone1").unwrap();
     assert_eq!(app.anim.state.project.skeleton.bones.len(), initial_len - 1);
     assert!(app.anim.state.project.skeleton.bone_id_to_index("Bone1").is_none());
 
-    // 2. 切换回动画模式并执行撤销，验证骨骼及其映射是否完全恢复
-    app.mode = AppMode::Animation;
     exec(&mut app, Box::new(UndoCmd));
     assert_eq!(app.anim.state.project.skeleton.bones.len(), initial_len);
     assert!(app.anim.state.project.skeleton.bone_id_to_index("Bone1").is_some(), "撤销后内部状态必须被正确重建");
 
-    // 3. 执行重做，验证骨骼再次被正确删除且映射清除
     exec(&mut app, Box::new(RedoCmd));
     assert_eq!(app.anim.state.project.skeleton.bones.len(), initial_len - 1);
     assert!(app.anim.state.project.skeleton.bone_id_to_index("Bone1").is_none());

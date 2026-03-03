@@ -7,6 +7,8 @@ pub struct InputHandler;
 
 impl InputHandler {
     pub fn on_mouse_down(app: &mut AppState, x: u32, y: u32) -> Result<(), CoreError> {
+        let (cx, cy) = app.pixel.view.screen_to_canvas(app.pixel.engine.store(), x as f32, y as f32)
+            .unwrap_or((x, y));
         if app.is_space_pressed { 
             app.last_mouse_pos = Some((x, y));
             return Ok(()); 
@@ -21,7 +23,7 @@ impl InputHandler {
                     app.anim.state.drag_start_animation = Some(anim.clone());
                 }
             }
-            let click_res = Self::handle_animation_click(app, x, y);
+            let click_res = Self::handle_animation_click(app, cx, cy);
             if let Some(tool) = app.pixel.engine.tool_manager_mut().tools.get_mut(&ToolType::CreateBone) {
                 if let Some(bone_tool) = tool.as_any_mut().downcast_mut::<crate::tools::create_bone::CreateBoneTool>() {
                     bone_tool.parent_bone_id = app.anim.selected_bone_id.clone();
@@ -29,7 +31,7 @@ impl InputHandler {
             }
             if app.pixel.engine.tool_manager().active_type == ToolType::CreateBone {
                 let (store, symmetry, tool_manager, _) = app.pixel.engine.parts_mut();
-                let _ = tool_manager.handle_pointer_down(x, y, store, symmetry);
+                let _ = tool_manager.handle_pointer_down(cx, cy, store, symmetry);
                 return Ok(());
             }
             return click_res;
@@ -42,9 +44,9 @@ impl InputHandler {
                 }
             }
             let (store, symmetry, tool_manager, _) = app.pixel.engine.parts_mut();
-            return tool_manager.handle_pointer_down(x, y, store, symmetry);
+            return tool_manager.handle_pointer_down(cx, cy, store, symmetry);
         }
-        let effect = app.pixel.engine.handle_input(InputEvent::PointerDown { x, y });
+        let effect = app.pixel.engine.handle_input(InputEvent::PointerDown { x: cx, y: cy });
         app.last_mouse_pos = Some((x, y));
         let result = match &effect {
             EngineEffect::Error(e) => Err(e.clone()),
@@ -60,11 +62,13 @@ impl InputHandler {
         let dx = (x as i32).wrapping_sub(last_pos.0 as i32) as f32;
         let dy = (y as i32).wrapping_sub(last_pos.1 as i32) as f32;
         app.last_mouse_pos = Some((x, y));
+        let (cx, cy) = app.pixel.view.screen_to_canvas(app.pixel.engine.store(), x as f32, y as f32)
+            .unwrap_or((x, y));
         if app.is_space_pressed { return Ok(()); }
         if app.mode == AppMode::Animation {
             if app.pixel.engine.tool_manager().active_type == ToolType::CreateBone {
                 let (store, symmetry, tool_manager, _) = app.pixel.engine.parts_mut();
-                return tool_manager.handle_pointer_move(x, y, store, symmetry);
+                return tool_manager.handle_pointer_move(cx, cy, store, symmetry);
             }
 
             if app.pixel.engine.tool_manager().is_drawing {
@@ -129,9 +133,9 @@ impl InputHandler {
 
         if app.pixel.engine.tool_manager().active_type == ToolType::CreateBone {
             let (store, symmetry, tool_manager, _) = app.pixel.engine.parts_mut();
-            return tool_manager.handle_pointer_move(x, y, store, symmetry);
+            return tool_manager.handle_pointer_move(cx, cy, store, symmetry);
         }
-        let effect = app.pixel.engine.handle_input(InputEvent::PointerMove { x, y });
+        let effect = app.pixel.engine.handle_input(InputEvent::PointerMove { x: cx, y: cy });
         let result = match &effect {
             EngineEffect::Error(e) => Err(e.clone()),
             _ => Ok(()),
@@ -144,25 +148,26 @@ impl InputHandler {
     pub fn on_mouse_up(app: &mut AppState) -> Result<(), CoreError> {
         let was_drawing = app.pixel.engine.tool_manager().is_drawing;
         app.last_mouse_pos = None;
+
+        if was_drawing && app.pixel.engine.tool_manager().active_type == ToolType::CreateBone {
+            let mut tool_data = None;
+            if let Some(tool) = app.pixel.engine.tool_manager().tools.get(&ToolType::CreateBone) {
+                if let Some(bt) = tool.as_any().downcast_ref::<crate::tools::create_bone::CreateBoneTool>() {
+                    if let (Some(s), Some(e)) = (bt.start_pos, bt.preview_end) {
+                        tool_data = Some((s, e, bt.parent_bone_id.clone()));
+                    }
+                }
+            }
+            if let Some((s, e, p)) = tool_data {
+                app.enqueue_command(Box::new(crate::app::commands::CreateBoneCmd { start: s, end: e, parent_id: p }));
+            }
+            
+            let (store, _, tool_manager, id_gen) = app.pixel.engine.parts_mut();
+            return tool_manager.handle_pointer_up(store, id_gen).map(|_| ());
+        }
         
         if app.mode == AppMode::Animation {
             app.pixel.engine.tool_manager_mut().is_drawing = false;
-            if app.pixel.engine.tool_manager().active_type == ToolType::CreateBone {
-                let mut tool_data = None;
-                if let Some(tool) = app.pixel.engine.tool_manager().tools.get(&ToolType::CreateBone) {
-                    if let Some(bt) = tool.as_any().downcast_ref::<crate::tools::create_bone::CreateBoneTool>() {
-                        if let (Some(s), Some(e)) = (bt.start_pos, bt.preview_end) {
-                            tool_data = Some((s, e, bt.parent_bone_id.clone()));
-                        }
-                    }
-                }
-
-                if let Some((s, e, p)) = tool_data {
-                    app.enqueue_command(Box::new(crate::app::commands::CreateBoneCmd { start: s, end: e, parent_id: p }));
-                }
-                let (store, _, tool_manager, id_gen) = app.pixel.engine.parts_mut();
-                return tool_manager.handle_pointer_up(store, id_gen).map(|_| ());
-            }
             if let Some(old_skel) = app.anim.state.drag_start_skeleton.take() {
                 let mut patches = Vec::new();
                 patches.push(AnimPatch::Skeleton { old: old_skel, new: app.anim.state.project.skeleton.clone() });
@@ -188,23 +193,6 @@ impl InputHandler {
             return Ok(());
         }
 
-        if was_drawing && app.pixel.engine.tool_manager().active_type == ToolType::CreateBone {
-            let mut tool_data = None;
-                if let Some(tool) = app.pixel.engine.tool_manager().tools.get(&ToolType::CreateBone) {
-                    if let Some(bt) = tool.as_any().downcast_ref::<crate::tools::create_bone::CreateBoneTool>() {
-                        if let (Some(s), Some(e)) = (bt.start_pos, bt.preview_end) {
-                            tool_data = Some((s, e, bt.parent_bone_id.clone()));
-                        }
-                    }
-                }
-                if let Some((s, e, p)) = tool_data {
-                    app.enqueue_command(Box::new(crate::app::commands::CreateBoneCmd { start: s, end: e, parent_id: p }));
-                }
-            
-            let (store, _, tool_manager, id_gen) = app.pixel.engine.parts_mut();
-            return tool_manager.handle_pointer_up(store, id_gen).map(|_| ());
-        }
-
         let effect = app.pixel.engine.handle_input(InputEvent::PointerUp);
         let result = match &effect {
             EngineEffect::Error(e) => Err(e.clone()),
@@ -215,13 +203,13 @@ impl InputHandler {
         result
     }
 
-    pub fn handle_animation_click(app: &mut AppState, x: u32, y: u32) -> Result<(), CoreError> {
+    pub fn handle_animation_click(app: &mut AppState, cx: u32, cy: u32) -> Result<(), CoreError> {
         let mut clicked_bone_id = None;
         for bone in &app.anim.state.project.skeleton.bones {
             let bx = bone.world_matrix[4];
             let by = bone.world_matrix[5];
-            let fx = x as i32 as f32;
-            let fy = y as i32 as f32;
+            let fx = cx as i32 as f32;
+            let fy = cy as i32 as f32;
             
             if ((fx - bx).powi(2) + (fy - by).powi(2)).sqrt() < 10.0 {
                 clicked_bone_id = Some(bone.data.id.clone());

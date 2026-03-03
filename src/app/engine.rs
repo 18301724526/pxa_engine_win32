@@ -148,24 +148,24 @@ impl PxaEngine {
     Ok(())
     }
 
-    pub fn undo(&mut self) -> crate::core::error::Result<()> {
+    pub fn undo(&mut self) -> crate::core::error::Result<bool> {
         let s = self.store.as_any_mut().downcast_mut::<PixelStore>().unwrap();
-        self.history.undo(s)?;
+        let changed = self.history.undo(s)?;
         for layer in &mut s.layers {
             layer.prune_empty_chunks();
         }
         self.refresh_cache();
-    Ok(())
+        Ok(changed)
     }
 
-    pub fn redo(&mut self) -> crate::core::error::Result<()> {
+    pub fn redo(&mut self) -> crate::core::error::Result<bool> {
         let s = self.store.as_any_mut().downcast_mut::<PixelStore>().unwrap();
-        self.history.redo(s)?;
+        let changed = self.history.redo(s)?;
         for layer in &mut s.layers {
             layer.prune_empty_chunks();
         }
         self.refresh_cache();
-        Ok(())
+        Ok(changed)
     }
 
     pub fn replace_store_and_symmetry(&mut self, store: PixelStore, symmetry: SymmetryConfig) {
@@ -186,8 +186,8 @@ impl PxaEngine {
             }
             InputEvent::PointerMove { x, y } => {
                 if self.tool_manager.is_drawing {
-                    self.tool_manager.handle_pointer_move(x, y, s, sym)
-                        .map(|_| self.process_dirty_rect())
+                    let res = self.tool_manager.handle_pointer_move(x, y, s, sym);
+                    res.map(|_| self.process_dirty_rect())
                 } else {
                     Ok(EngineEffect::None)
                 }

@@ -49,7 +49,8 @@ impl Tool for CreateBoneTool {
     }
 
     fn on_commit(&mut self, _store: &mut PixelStore, _id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
-        self.on_cancel(_store);
+        self.start_pos = None;
+        self.preview_end = None;
         Ok(None)
     }
 

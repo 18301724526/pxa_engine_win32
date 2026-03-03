@@ -259,7 +259,7 @@ impl AnimCompositor {
             let tip_x = root_x + length * m[0];
             let tip_y = root_y + length * m[1];
 
-            let width = (length * 0.15).clamp(3.0, 15.0);
+            let width = (length * 0.075).clamp(1.5, 7.5);
 
             let dx = m[0]; 
             let dy = m[1];

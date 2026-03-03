@@ -1,34 +1,65 @@
 use crate::app::command_handler::{Command, AppEvent};
 use crate::app::state::{AppState, AppMode};
+use crate::animation::history::AnimPatch;
 use std::collections::VecDeque;
 
 pub struct UndoCmd;
 impl Command for UndoCmd {
     fn execute(&self, state: &mut AppState, _events: &mut VecDeque<AppEvent>) -> Result<(), String> {
-        if state.mode == AppMode::Animation {
-            if state.anim.state.history.undo(&mut state.anim.state.project) {
-                state.is_dirty = true; state.pixel.view.needs_full_redraw = true;
-                crate::animation::controller::AnimationController::apply_current_pose(&mut state.anim.state);
+        let mut changed = false;
+
+        match state.mode {
+            AppMode::PixelEdit => {
+                if state.pixel.engine.undo().unwrap_or(false) {
+                    changed = true;
+                    sync_animation_from_pixel_stack(state, true);
+                }
             }
-        } else {
-            state.pixel.engine.undo().map_err(|e| e.to_string())?;
-            state.is_dirty = true; state.pixel.view.needs_full_redraw = true;
+            AppMode::Animation => {
+                changed = state.anim.state.history.undo(&mut state.anim.state.project);
+            }
+        }
+
+        if changed {
+            state.is_dirty = true;
+            state.pixel.view.needs_full_redraw = true;
+            state.sync_animation_to_layers();
+            state.sync_animation_to_layers();
         }
         Ok(())
+    }
+}
+
+fn sync_animation_from_pixel_stack(state: &mut AppState, is_undo: bool) {
+    let stack = if is_undo { &state.pixel.engine.history().redo_stack } else { &state.pixel.engine.history().undo_stack };
+    if let Some(p) = stack.last() {
+        if let Some(ap) = p.action.as_any().downcast_ref::<crate::history::patch::AnimationPatch>() {
+            state.anim.state.history.apply_patch(&mut state.anim.state.project, &ap.inner, is_undo);
+        }
     }
 }
 
 pub struct RedoCmd;
 impl Command for RedoCmd {
     fn execute(&self, state: &mut AppState, _events: &mut VecDeque<AppEvent>) -> Result<(), String> {
-        if state.mode == AppMode::Animation {
-            if state.anim.state.history.redo(&mut state.anim.state.project) {
-                state.is_dirty = true; state.pixel.view.needs_full_redraw = true;
-                crate::animation::controller::AnimationController::apply_current_pose(&mut state.anim.state);
+        let mut changed = false;
+
+        match state.mode {
+            AppMode::PixelEdit => {
+                if state.pixel.engine.redo().unwrap_or(false) {
+                    changed = true;
+                    sync_animation_from_pixel_stack(state, false);
+                }
             }
-        } else {
-            state.pixel.engine.redo().map_err(|e| e.to_string())?;
-            state.is_dirty = true; state.pixel.view.needs_full_redraw = true;
+            AppMode::Animation => {
+                changed = state.anim.state.history.redo(&mut state.anim.state.project);
+            }
+        }
+
+        if changed {
+            state.is_dirty = true;
+            state.pixel.view.needs_full_redraw = true;
+            state.sync_animation_to_layers();
         }
         Ok(())
     }
