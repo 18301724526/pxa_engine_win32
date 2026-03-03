@@ -5,6 +5,7 @@ pub enum CoreError {
     LayerLocked,
     OutOfBounds { x: u32, y: u32 },
     LayerNotFound(String),
+    BoneNotFound(String),
 }
 
 impl std::fmt::Display for CoreError {
@@ -13,6 +14,7 @@ impl std::fmt::Display for CoreError {
             CoreError::LayerLocked => write!(f, "{}", t!("error.layer_locked")),
             CoreError::OutOfBounds { x, y } => write!(f, "{}", t!("error.out_of_bounds", x = x, y = y)),
             CoreError::LayerNotFound(id) => write!(f, "{}", t!("error.layer_not_found", id = id)),
+            CoreError::BoneNotFound(id) => write!(f, "Bone not found: {}", id),
         }
     }
 }

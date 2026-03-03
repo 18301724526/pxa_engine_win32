@@ -3,7 +3,6 @@ use crate::history::patch::{ActionPatch, PixelDiffPatch, PixelDiff};
 use super::tool_trait::Tool;
 use crate::core::color::Color;
 use crate::core::layer::{Layer, Chunk, CHUNK_SIZE};
-use crate::core::id_gen;
 use std::collections::HashMap;
 use crate::core::error::CoreError;
 use crate::core::symmetry::SymmetryConfig;
@@ -108,7 +107,7 @@ impl Tool for BucketTool {
 
     fn on_pointer_move(&mut self, _x: u32, _y: u32, _store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> { Ok(()) }
 
-    fn on_pointer_up(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_pointer_up(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         let layer_id = match self.active_layer_id.take() { Some(id) => id, None => return Ok(None) };
         if self.backup_chunks.is_empty() { return Ok(None) }
 
@@ -168,7 +167,7 @@ impl Tool for BucketTool {
 
         if diffs.is_empty() { return Ok(None); }
         
-        let mut patch = ActionPatch::new_pixel_diff(id_gen::gen_id(), layer_id);
+        let mut patch = ActionPatch::new_pixel_diff(id_gen.generate(), layer_id);
         if let Some(p) = patch.action.as_any_mut().downcast_mut::<PixelDiffPatch>() {
             p.diffs = diffs;
         }    
@@ -179,8 +178,8 @@ impl Tool for BucketTool {
         self.dirty_rect.take()
     }
 
-    fn on_commit(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
-        self.on_pointer_up(store)
+    fn on_commit(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
+        self.on_pointer_up(store, id_gen)
     }
 
     fn on_cancel(&mut self, _store: &mut PixelStore) {

@@ -4,6 +4,8 @@ use super::palette::Palette;
 use super::selection::SelectionData;
 use super::path::BezierPath;
 use crate::core::error::{CoreError, Result};
+use crate::core::storage::PixelStorage;
+use std::any::Any;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrushShape {
@@ -128,6 +130,18 @@ impl PixelStore {
             Color::transparent()
         }
     }
+}
+impl PixelStorage for PixelStore {
+    fn canvas_width(&self) -> u32 { self.canvas_width }
+    fn canvas_height(&self) -> u32 { self.canvas_height }
+    fn add_layer(&mut self, layer: Layer) { self.add_layer(layer); }
+    fn get_layer(&self, id: &str) -> Option<&Layer> { self.get_layer(id) }
+    fn get_layer_mut(&mut self, id: &str) -> Option<&mut Layer> { self.get_layer_mut(id) }
+    fn get_pixel(&self, layer_id: &str, canvas_x: u32, canvas_y: u32) -> Option<Color> { self.get_pixel(layer_id, canvas_x, canvas_y) }
+    fn mut_set_pixel(&mut self, layer_id: &str, canvas_x: u32, canvas_y: u32, color: Color) -> Result<()> { self.mut_set_pixel(layer_id, canvas_x, canvas_y, color) }
+    
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

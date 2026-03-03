@@ -9,14 +9,14 @@ use crate::app::state::AppState;
 pub struct TimelinePanel;
 
 impl TimelinePanel {
-    pub fn show(ui: &mut Ui, app: &mut AppState) {
-        toolbar::Toolbar::show(ui, app);
+    pub fn show(ui: &mut Ui, app: &mut AppState, ui_ctx: &mut crate::app::ui_context::UiContext) {
+        toolbar::Toolbar::show(ui, app, ui_ctx);
         ui.separator();
 
-        dopesheet::Dopesheet::show(ui, app);
+        dopesheet::Dopesheet::show(ui, app, ui_ctx);
 
-        curve_editor::CurveEditor::show(ui, app);
+        curve_editor::CurveEditor::show(ui, app, ui_ctx);
 
-        offset_modal::OffsetModal::show(ui, app);
+        offset_modal::OffsetModal::show(ui, app, ui_ctx);
     }
 }

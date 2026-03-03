@@ -2,12 +2,12 @@ use crate::core::store::PixelStore;
 use crate::history::patch::ActionPatch;
 use super::tool_trait::Tool;
 use super::geometry::Geometry;
-use crate::core::id_gen;
 use std::cmp::{min, max};
 use std::collections::HashMap;
 use crate::core::color::Color;
 use crate::core::error::CoreError;
 use crate::core::symmetry::SymmetryConfig;
+use crate::core::symmetry::SymmetryProvider;
 
 pub struct PencilTool {
     pub original_pixels: HashMap<(u32, u32), Color>,
@@ -92,7 +92,7 @@ impl PencilTool {
             }
         }
         
-        symmetry.apply_symmetry(cx, cy, |tx, ty| {
+        let mut callback = |tx: i32, ty: i32| {
             if res.is_err() { return; }
             self.update_dirty_rect_internal(tx, ty, brush_size + store.brush_jitter * 2);
             for (rx, ry) in &rel_points {
@@ -100,33 +100,33 @@ impl PencilTool {
                 let py = ty + ry;
                     
                     if px >= 0 && py >= 0 {
-                        let px_u = px as u32;
-                        let py_u = py as u32;
-                        let lx = px - offset_x;
-                        let ly = py - offset_y;
+                    let px_u = px as u32;
+                    let py_u = py as u32;
+                    let lx = px - offset_x;
+                    let ly = py - offset_y;
 
-                        if lx >= 0 && ly >= 0 && lx < l_width as i32 && ly < l_height as i32 {
-                            let current_color = store.get_pixel(&layer_id_inner, px_u, py_u).unwrap_or(Color::transparent());
-                            
-                            if current_color == color {
-                                continue;
-                            }
+                    if lx >= 0 && ly >= 0 && lx < l_width as i32 && ly < l_height as i32 {
+                        let current_color = store.get_pixel(&layer_id_inner, px_u, py_u).unwrap_or(Color::transparent());
+                        
+                        if current_color == color {
+                            continue;
+                        }
 
-                            let lx_u = lx as u32;
-                            let ly_u = ly as u32;
-                            
-                            if !self.original_pixels.contains_key(&(lx_u, ly_u)) {
-                                self.original_pixels.insert((lx_u, ly_u), current_color);
-                            }
+                        let lx_u = lx as u32;
+                        let ly_u = ly as u32;
+                        
+                        if !self.original_pixels.contains_key(&(lx_u, ly_u)) {
+                            self.original_pixels.insert((lx_u, ly_u), current_color);
+                        }
 
-                            if let Err(e) = store.mut_set_pixel(&layer_id_inner, px_u, py_u, color) {
-                                res = Err(e);
-                            }
+                        if let Err(e) = store.mut_set_pixel(&layer_id_inner, px_u, py_u, color) {
+                            res = Err(e);
                         }
                     }
                 }
-            
-        });
+            }
+        };
+        symmetry.apply_symmetry(cx, cy, &mut callback);
         res
     }
 }
@@ -164,7 +164,7 @@ impl Tool for PencilTool {
         Ok(())
     }
 
-    fn on_pointer_up(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_pointer_up(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         let layer_id = match self.active_layer_id.take() { 
             Some(id) => id, 
             None => return Ok(None) 
@@ -173,7 +173,7 @@ impl Tool for PencilTool {
         
         let layer = match store.get_layer(&layer_id) { Some(l) => l, None => return Ok(None) };
         
-        let mut patch = ActionPatch::new_pixel_diff(id_gen::gen_id(), layer_id.clone());
+        let mut patch = ActionPatch::new_pixel_diff(id_gen.generate(), layer_id.clone());
         
         for (&(lx, ly), &old_color) in &self.original_pixels {
             let new_color = layer.get_pixel(lx, ly).unwrap_or(Color::transparent());
@@ -187,8 +187,8 @@ impl Tool for PencilTool {
         Ok(Some(patch))
     }
 
-    fn on_commit(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
-        self.on_pointer_up(store)
+    fn on_commit(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
+        self.on_pointer_up(store, id_gen)
     }
 
     fn on_cancel(&mut self, _store: &mut PixelStore) {

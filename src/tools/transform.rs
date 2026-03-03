@@ -6,7 +6,6 @@ use crate::core::layer::{Layer, Chunk, CHUNK_SIZE};
 use crate::core::color::Color;
 use crate::core::selection::SelectionData;
 use crate::core::error::CoreError;
-use crate::core::id_gen;
 use std::collections::{HashMap, HashSet};
 use rust_i18n::t;
 
@@ -381,13 +380,13 @@ impl Tool for TransformTool {
         Ok(())
     }
 
-    fn on_pointer_up(&mut self, _store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_pointer_up(&mut self, _store: &mut PixelStore, _id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         self.start_pos = None;
         self.drag_mode = DragMode::None;
         Ok(None)
     }
     
-    fn on_commit(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_commit(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         if !self.is_active { return Ok(None); }
         self.is_active = false;
         
@@ -400,10 +399,10 @@ impl Tool for TransformTool {
         let new_sel = store.selection.clone();
         
         if sel_backup != new_sel {
-            sub_patches.push(ActionPatch::new_selection_change(id_gen::gen_id(), sel_backup.clone(), new_sel));
+            sub_patches.push(ActionPatch::new_selection_change(id_gen.generate(), sel_backup.clone(), new_sel));
         }
 
-        let mut pixel_patch = ActionPatch::new_pixel_diff(id_gen::gen_id(), layer_id.clone());
+        let mut pixel_patch = ActionPatch::new_pixel_diff(id_gen.generate(), layer_id.clone());
         for (key, old_chunk) in &backup.chunks {
             if let Some(new_chunk) = current.chunks.get(key) {
                 if new_chunk.data.as_ref() != old_chunk.data.as_ref() {
@@ -439,7 +438,7 @@ impl Tool for TransformTool {
         if !pixel_patch.is_empty() { sub_patches.push(pixel_patch); }
 
         if !sub_patches.is_empty() {
-            return Ok(Some(ActionPatch::new_composite(id_gen::gen_id(), sub_patches)));
+            return Ok(Some(ActionPatch::new_composite(id_gen.generate(), sub_patches)));
         }
         Ok(None)
     }

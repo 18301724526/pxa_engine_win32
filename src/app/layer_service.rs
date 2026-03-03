@@ -1,5 +1,4 @@
 use crate::app::context::CanvasContext;
-use crate::core::id_gen;
 use crate::core::layer::Layer;
 use crate::history::patch::ActionPatch;
 use crate::render::blend::blend_pixels;
@@ -10,7 +9,7 @@ pub struct LayerService;
 
 impl LayerService {
     pub fn add_new_layer(ctx: CanvasContext) -> Result<()> {
-        let id = format!("layer_{}", id_gen::gen_id());
+        let id = format!("layer_{}", ctx.id_gen.generate());
         let mut next_idx = ctx.store.layers.len() + 1;
         for l in &ctx.store.layers {
             let num_part: String = l.name.chars()
@@ -55,7 +54,7 @@ impl LayerService {
             let old_active_id = ctx.store.active_layer_id.clone();
             
             let patch = ActionPatch::new_layer_remove(
-                format!("patch_rm_{}", id_gen::gen_id()),
+                format!("patch_rm_{}", ctx.id_gen.generate()),
                 active_id, 
                 layer, 
                 index,
@@ -69,7 +68,7 @@ impl LayerService {
         if let Some(layer) = ctx.store.get_layer(layer_id) {
             let new_vis = !layer.visible;
             let patch = ActionPatch::new_layer_visibility(
-                format!("patch_vis_{}", id_gen::gen_id()),
+                format!("patch_vis_{}", ctx.id_gen.generate()),
                 layer_id.to_string(), 
                 new_vis
             );
@@ -81,7 +80,7 @@ impl LayerService {
         if let Some(index) = ctx.store.layers.iter().position(|l| l.id == layer_id) {
             let mut new_layer = ctx.store.layers[index].clone();
             let old_active_id = ctx.store.active_layer_id.clone();
-            new_layer.id = format!("layer_{}", id_gen::gen_id());
+            new_layer.id = format!("layer_{}", ctx.id_gen.generate());
             new_layer.name = t!("layer.copy_name", name = new_layer.name).to_string();
             
             let patch = ActionPatch::new_layer_add(
@@ -109,7 +108,7 @@ impl LayerService {
     fn do_merge_layers(ctx: CanvasContext, indices: Vec<usize>, new_name: String) -> Result<()> {
         let w = ctx.store.canvas_width;
         let h = ctx.store.canvas_height;
-        let new_id = format!("layer_{}", id_gen::gen_id());
+        let new_id = format!("layer_{}", ctx.id_gen.generate());
         let mut merged_layer = Layer::new(new_id.clone(), new_name, w, h);
         
         for y in 0..h {
@@ -142,7 +141,7 @@ impl LayerService {
             patches.push(ActionPatch::new_layer_remove(format!("rm_{}", layer.id), layer.id.clone(), layer, idx, old_active_id_for_rm));
         }
         
-        let composite_patch = ActionPatch::new_composite(format!("merge_{}", id_gen::gen_id()), patches);
+        let composite_patch = ActionPatch::new_composite(format!("merge_{}", ctx.id_gen.generate()), patches);
         ctx.history.commit(composite_patch, ctx.store)?;
         ctx.store.active_layer_id = Some(new_id);
         Ok(())

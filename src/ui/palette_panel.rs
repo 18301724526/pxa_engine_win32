@@ -1,6 +1,6 @@
 use egui::{Ui, Color32, Sense, vec2, Stroke, RichText};
 use crate::app::state::AppState;
-use crate::app::commands::AppCommand;
+use crate::app::commands::*;
 use crate::core::color::Color;
 use rust_i18n::t;
 
@@ -12,10 +12,10 @@ const ICON_TRASH: &str   = "\u{ec2a}";
 pub struct PalettePanel;
 
 impl PalettePanel {
-    pub fn show(ui: &mut Ui, app: &mut AppState) {
+    pub fn show(ui: &mut Ui, app: &mut AppState, _ui_ctx: &mut crate::app::ui_context::UiContext) {
         ui.vertical(|ui| {
             ui.horizontal_wrapped(|ui| {
-                let raw_name = &app.engine.store().palette.name;
+                let raw_name = &app.pixel.engine.store().palette.name;
                 let display_name = if raw_name.is_empty() {
                     t!("palette.title").to_string()
                 } else if raw_name == "PICO-8 (默认)" || raw_name == "PICO-8 (Default)" {
@@ -33,25 +33,25 @@ impl PalettePanel {
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button(ICON_SAVE).on_hover_text(t!("palette.export_hex")).clicked() {
-                        app.enqueue_command(AppCommand::ExportPalette);
+                        app.enqueue_command(Box::new(ExportPaletteCmd));
                     }
                     if ui.button(ICON_FOLDER).on_hover_text(t!("palette.import_hex")).clicked() {
-                        app.enqueue_command(AppCommand::ImportPalette);
+                        app.enqueue_command(Box::new(ImportPaletteCmd));
                     }
                 });
             });
             ui.add_space(10.0);
 
             let mut color_arr = [
-                app.engine.store().primary_color.r,
-                app.engine.store().primary_color.g,
-                app.engine.store().primary_color.b,
+                app.pixel.engine.store().primary_color.r,
+                app.pixel.engine.store().primary_color.g,
+                app.pixel.engine.store().primary_color.b,
             ];
             
             ui.horizontal(|ui| {
                 if ui.color_edit_button_srgb(&mut color_arr).changed() {
                     let new_color = Color::new(color_arr[0], color_arr[1], color_arr[2], 255);
-                    app.enqueue_command(AppCommand::SetPrimaryColor(new_color));
+                    app.enqueue_command(Box::new(SetPrimaryColorCmd(new_color)));
                 }
                 
                 ui.label(RichText::new(t!("palette.main_color").to_string()).size(11.0).color(Color32::LIGHT_GRAY));
@@ -59,7 +59,7 @@ impl PalettePanel {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button(ICON_ADD_COL).on_hover_text(t!("palette.add_color")).clicked() {
                         let current = Color::new(color_arr[0], color_arr[1], color_arr[2], 255);
-                        app.enqueue_command(AppCommand::AddColorToPalette(current));
+                        app.enqueue_command(Box::new(AddColorToPaletteCmd(current)));
                     }
                 });
             });
@@ -74,11 +74,11 @@ impl PalettePanel {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
 
-                    let cloned_colors = app.engine.store().palette.colors.clone();
+                    let cloned_colors = app.pixel.engine.store().palette.colors.clone();
                     
                     for (i, color) in cloned_colors.into_iter().enumerate() {
                         let egui_color = Color32::from_rgb(color.r, color.g, color.b);
-                        let is_selected = app.engine.store().primary_color == color;
+                        let is_selected = app.pixel.engine.store().primary_color == color;
                         
                         let (rect, response) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
                         
@@ -94,14 +94,14 @@ impl PalettePanel {
                         ui.painter().rect_stroke(rect, 2.0, stroke);
 
                         if response.clicked() {
-                            app.enqueue_command(AppCommand::SetPrimaryColor(color));
+                            app.enqueue_command(Box::new(SetPrimaryColorCmd(color)));
                         }
 
                         let response = response.on_hover_text(format!("#{:02X}{:02X}{:02X}\n{}", color.r, color.g, color.b, t!("palette.delete_color")));
 
                         response.context_menu(|ui| {
                             if ui.button(format!("{} {}", ICON_TRASH, t!("palette.delete_btn"))).clicked() {
-                                app.enqueue_command(AppCommand::RemovePaletteColor(i));
+                                app.enqueue_command(Box::new(RemovePaletteColorCmd(i)));
                                 ui.close_menu();
                             }
                         });

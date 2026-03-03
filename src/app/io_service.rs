@@ -29,6 +29,17 @@ impl IoService {
             .save_file()
     }
 
+    pub fn pick_sequence_export_dir() -> Option<PathBuf> {
+        rfd::FileDialog::new().pick_folder()
+    }
+
+    pub fn pick_gif_export_path() -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .set_file_name("animation.gif")
+            .add_filter("GIF Animation", &["gif"])
+            .save_file()
+    }
+
     pub fn pick_palette_import_path() -> Option<PathBuf> {
         rfd::FileDialog::new()
             .add_filter("HEX Palette", &["hex", "txt"])
@@ -59,6 +70,27 @@ impl IoService {
         
         Compositor::render(store,  &mut pixels, view);
         image::save_buffer(path, &pixels, width, height, image::ColorType::Rgba8)?;
+        Ok(())
+    }
+
+    pub fn save_gif(path: PathBuf, width: u32, height: u32, frames: Vec<Vec<u8>>, fps: u32) -> Result<()> {
+        let file = File::create(path)?;
+        let mut encoder = image::codecs::gif::GifEncoder::new(file);
+        encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
+        for frame_data in frames {
+            let img = image::RgbaImage::from_raw(width, height, frame_data)
+                .ok_or_else(|| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, "Invalid frame buffer")))?;
+            let frame = image::Frame::from_parts(img, 0, 0, image::Delay::from_numer_denom_ms(1000, fps));
+            encoder.encode_frame(frame)?;
+        }
+        Ok(())
+    }
+
+    pub fn save_sequence(dir: PathBuf, width: u32, height: u32, frames: Vec<Vec<u8>>) -> Result<()> {
+        for (i, frame_data) in frames.into_iter().enumerate() {
+            let path = dir.join(format!("frame_{:04}.png", i));
+            image::save_buffer(path, &frame_data, width, height, image::ColorType::Rgba8)?;
+        }
         Ok(())
     }
     pub fn pick_project_save_path() -> Option<PathBuf> {

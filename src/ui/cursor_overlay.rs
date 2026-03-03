@@ -17,64 +17,64 @@ impl CursorOverlay {
         let physical_x = pointer_pos.x * scale_factor;
         let physical_y = pointer_pos.y * scale_factor;
 
-        let (cx, cy) = match app.view.screen_to_canvas(app.engine.store(), physical_x, physical_y) {
+        let (cx, cy) = match app.pixel.view.screen_to_canvas(app.pixel.engine.store(), physical_x, physical_y) {
             Some(coords) => coords,
             None => return,
         };
-        if app.engine.tool_manager().active_type == ToolType::Eyedropper {
-            let color = app.engine.store().get_composite_pixel(cx, cy);
+        if app.pixel.engine.tool_manager().active_type == ToolType::Eyedropper {
+            let color = app.pixel.engine.store().get_composite_pixel(cx, cy);
             Self::draw_eyedropper_preview(ctx, color);
         }
-        if app.engine.tool_manager().active_type == ToolType::Pencil || app.engine.tool_manager().active_type == ToolType::Eraser {
-            let (rect_x, rect_y, rect_w, rect_h) = Self::calculate_brush_rect(cx, cy, app.engine.store().brush_size);
+        if app.pixel.engine.tool_manager().active_type == ToolType::Pencil || app.pixel.engine.tool_manager().active_type == ToolType::Eraser {
+            let (rect_x, rect_y, rect_w, rect_h) = Self::calculate_brush_rect(cx, cy, app.pixel.engine.store().brush_size);
             let screen_rect = Self::canvas_rect_to_screen_rect(
                 rect_x, rect_y, rect_w, rect_h,
                 app,
-                app.view.width,
-                app.view.height,
+                app.pixel.view.width,
+                app.pixel.view.height,
                 scale_factor
             );
 
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("cursor_overlay")));
-            Self::paint_cursor(&painter, screen_rect, app.engine.store());
+            Self::paint_cursor(&painter, screen_rect, app.pixel.engine.store());
         }
-        if app.engine.symmetry().visible_guides && app.engine.symmetry().mode != SymmetryMode::None {
+        if app.pixel.engine.symmetry().visible_guides && app.pixel.engine.symmetry().mode != SymmetryMode::None {
             let guide_painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("symmetry_guides")));
             Self::draw_symmetry_guides(&guide_painter, app, scale_factor);
         }
-        if app.view.zoom_level >= 8.0 {
+        if app.pixel.view.zoom_level >= 8.0 {
             let grid_painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("pixel_grid")));
             Self::draw_pixel_grid(&grid_painter, app, scale_factor);
         }
 
-        if app.engine.tool_manager().active_type == ToolType::Transform {
+        if app.pixel.engine.tool_manager().active_type == ToolType::Transform {
             let transform_painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("transform_overlay")));
             Self::draw_transform_overlay(&transform_painter, app, scale_factor);
         }
-        if app.engine.tool_manager().active_type == ToolType::Pen {
+        if app.pixel.engine.tool_manager().active_type == ToolType::Pen {
             let pen_painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("pen_overlay")));
             Self::draw_pen_overlay(&pen_painter, app, scale_factor);
         }
     }
 
     fn draw_pen_overlay(painter: &Painter, app: &AppState, scale_factor: f32) {
-        let tool = match app.engine.tool_manager().tools.get(&ToolType::Pen) {
+        let tool = match app.pixel.engine.tool_manager().tools.get(&ToolType::Pen) {
             Some(t) => t,
             None => return,
         };
         
         if let Some(pen_tool) = tool.as_any().downcast_ref::<PenTool>() {
-            let path = &app.engine.store().active_path;
+            let path = &app.pixel.engine.store().active_path;
 
-            let zoom = app.view.zoom_level as f32;
-            let screen_cx = app.view.width / 2.0;
-            let screen_cy = app.view.height / 2.0;
-            let canvas_cx = app.engine.store().canvas_width as f32 / 2.0;
-            let canvas_cy = app.engine.store().canvas_height as f32 / 2.0;
+            let zoom = app.pixel.view.zoom_level as f32;
+            let screen_cx = app.pixel.view.width / 2.0;
+            let screen_cy = app.pixel.view.height / 2.0;
+            let canvas_cx = app.pixel.engine.store().canvas_width as f32 / 2.0;
+            let canvas_cy = app.pixel.engine.store().canvas_height as f32 / 2.0;
 
             let to_screen = |cx: f32, cy: f32| -> Pos2 {
-                let phys_x = (cx - canvas_cx + app.view.pan_x) * zoom + screen_cx;
-                let phys_y = (cy - canvas_cy + app.view.pan_y) * zoom + screen_cy;
+                let phys_x = (cx - canvas_cx + app.pixel.view.pan_x) * zoom + screen_cx;
+                let phys_y = (cy - canvas_cy + app.pixel.view.pan_y) * zoom + screen_cy;
                 Pos2::new(phys_x / scale_factor, phys_y / scale_factor)
             };
 
@@ -143,18 +143,18 @@ impl CursorOverlay {
     }
 
     fn draw_transform_overlay(painter: &Painter, app: &AppState, scale_factor: f32) {
-        if let Some(params) = app.engine.tool_manager().get_transform_params() {
+        if let Some(params) = app.pixel.engine.tool_manager().get_transform_params() {
             let (min_x, min_y, w, h, piv_x, piv_y, off_x, off_y, s_x, s_y, rot): (f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) = params;
 
-            let zoom = app.view.zoom_level as f32;
-            let screen_cx = app.view.width / 2.0;
-            let screen_cy = app.view.height / 2.0;
-            let canvas_cx = app.engine.store().canvas_width as f32 / 2.0;
-            let canvas_cy = app.engine.store().canvas_height as f32 / 2.0;
+            let zoom = app.pixel.view.zoom_level as f32;
+            let screen_cx = app.pixel.view.width / 2.0;
+            let screen_cy = app.pixel.view.height / 2.0;
+            let canvas_cx = app.pixel.engine.store().canvas_width as f32 / 2.0;
+            let canvas_cy = app.pixel.engine.store().canvas_height as f32 / 2.0;
 
             let to_screen = |cx: f32, cy: f32| -> Pos2 {
-                let phys_x = (cx - canvas_cx + app.view.pan_x) * zoom + screen_cx;
-                let phys_y = (cy - canvas_cy + app.view.pan_y) * zoom + screen_cy;
+                let phys_x = (cx - canvas_cx + app.pixel.view.pan_x) * zoom + screen_cx;
+                let phys_y = (cy - canvas_cy + app.pixel.view.pan_y) * zoom + screen_cy;
                 Pos2::new(phys_x / scale_factor, phys_y / scale_factor)
             };
 
@@ -240,14 +240,14 @@ impl CursorOverlay {
         viewport_w: f32, viewport_h: f32,
         scale_factor: f32
     ) -> Rect {
-        let zoom = app.view.zoom_level as f32;
+        let zoom = app.pixel.view.zoom_level as f32;
         let screen_cx = viewport_w / 2.0;
         let screen_cy = viewport_h / 2.0;
-        let canvas_cx = app.engine.store().canvas_width as f32 / 2.0;
-        let canvas_cy = app.engine.store().canvas_height as f32 / 2.0;
+        let canvas_cx = app.pixel.engine.store().canvas_width as f32 / 2.0;
+        let canvas_cy = app.pixel.engine.store().canvas_height as f32 / 2.0;
 
-        let phys_x = (cx as f32 - canvas_cx + app.view.pan_x) * zoom + screen_cx;
-        let phys_y = (cy as f32 - canvas_cy + app.view.pan_y) * zoom + screen_cy;
+        let phys_x = (cx as f32 - canvas_cx + app.pixel.view.pan_x) * zoom + screen_cx;
+        let phys_y = (cy as f32 - canvas_cy + app.pixel.view.pan_y) * zoom + screen_cy;
 
         let logical_x = phys_x / scale_factor;
         let logical_y = phys_y / scale_factor;
@@ -273,48 +273,48 @@ impl CursorOverlay {
     }
 
     fn draw_symmetry_guides(painter: &Painter, app: &AppState, scale_factor: f32) {
-        let zoom = app.view.zoom_level as f32;
-        let screen_cx = app.view.width / 2.0;
-        let screen_cy = app.view.height / 2.0;
-        let canvas_cx = app.engine.store().canvas_width as f32 / 2.0;
-        let canvas_cy = app.engine.store().canvas_height as f32 / 2.0;
+        let zoom = app.pixel.view.zoom_level as f32;
+        let screen_cx = app.pixel.view.width / 2.0;
+        let screen_cy = app.pixel.view.height / 2.0;
+        let canvas_cx = app.pixel.engine.store().canvas_width as f32 / 2.0;
+        let canvas_cy = app.pixel.engine.store().canvas_height as f32 / 2.0;
 
         let to_logical_x = |val: f32| {
-            let phys = (val - canvas_cx + app.view.pan_x) * zoom + screen_cx;
+            let phys = (val - canvas_cx + app.pixel.view.pan_x) * zoom + screen_cx;
             phys / scale_factor
         };
         let to_logical_y = |val: f32| {
-            let phys = (val - canvas_cy + app.view.pan_y) * zoom + screen_cy;
+            let phys = (val - canvas_cy + app.pixel.view.pan_y) * zoom + screen_cy;
             phys / scale_factor
         };
 
         let stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 255, 255, 128));
-        let log_vw = app.view.width / scale_factor;
-        let log_vh = app.view.height / scale_factor;
+        let log_vw = app.pixel.view.width / scale_factor;
+        let log_vh = app.pixel.view.height / scale_factor;
 
-        if app.engine.symmetry().mode == SymmetryMode::Horizontal || app.engine.symmetry().mode == SymmetryMode::Quad {
-            let x = to_logical_x(app.engine.symmetry().axis_x);
+        if app.pixel.engine.symmetry().mode == SymmetryMode::Horizontal || app.pixel.engine.symmetry().mode == SymmetryMode::Quad {
+            let x = to_logical_x(app.pixel.engine.symmetry().axis_x);
             painter.line_segment([Pos2::new(x, 0.0), Pos2::new(x, log_vh)], stroke);
         }
-        if app.engine.symmetry().mode == SymmetryMode::Vertical || app.engine.symmetry().mode == SymmetryMode::Quad {
-            let y = to_logical_y(app.engine.symmetry().axis_y);
+        if app.pixel.engine.symmetry().mode == SymmetryMode::Vertical || app.pixel.engine.symmetry().mode == SymmetryMode::Quad {
+            let y = to_logical_y(app.pixel.engine.symmetry().axis_y);
             painter.line_segment([Pos2::new(0.0, y), Pos2::new(log_vw, y)], stroke);
         }
     }
     fn draw_pixel_grid(painter: &Painter, app: &AppState, scale_factor: f32) {
-        let zoom = app.view.zoom_level as f32;
-        let screen_cx = app.view.width / 2.0;
-        let screen_cy = app.view.height / 2.0;
-        let canvas_cx = app.engine.store().canvas_width as f32 / 2.0;
-        let canvas_cy = app.engine.store().canvas_height as f32 / 2.0;
+        let zoom = app.pixel.view.zoom_level as f32;
+        let screen_cx = app.pixel.view.width / 2.0;
+        let screen_cy = app.pixel.view.height / 2.0;
+        let canvas_cx = app.pixel.engine.store().canvas_width as f32 / 2.0;
+        let canvas_cy = app.pixel.engine.store().canvas_height as f32 / 2.0;
 
-        let to_logical_x = |cx: f32| { ((cx - canvas_cx + app.view.pan_x) * zoom + screen_cx) / scale_factor };
-        let to_logical_y = |cy: f32| { ((cy - canvas_cy + app.view.pan_y) * zoom + screen_cy) / scale_factor };
+        let to_logical_x = |cx: f32| { ((cx - canvas_cx + app.pixel.view.pan_x) * zoom + screen_cx) / scale_factor };
+        let to_logical_y = |cy: f32| { ((cy - canvas_cy + app.pixel.view.pan_y) * zoom + screen_cy) / scale_factor };
 
-        let start_cx = (((0.0 - screen_cx) / zoom + canvas_cx - app.view.pan_x).floor() as i32).max(0);
-        let start_cy = (((0.0 - screen_cy) / zoom + canvas_cy - app.view.pan_y).floor() as i32).max(0);
-        let end_cx = (((app.view.width - screen_cx) / zoom + canvas_cx - app.view.pan_x).ceil() as i32).min(app.engine.store().canvas_width as i32);
-        let end_cy = (((app.view.height - screen_cy) / zoom + canvas_cy - app.view.pan_y).ceil() as i32).min(app.engine.store().canvas_height as i32);
+        let start_cx = (((0.0 - screen_cx) / zoom + canvas_cx - app.pixel.view.pan_x).floor() as i32).max(0);
+        let start_cy = (((0.0 - screen_cy) / zoom + canvas_cy - app.pixel.view.pan_y).floor() as i32).max(0);
+        let end_cx = (((app.pixel.view.width - screen_cx) / zoom + canvas_cx - app.pixel.view.pan_x).ceil() as i32).min(app.pixel.engine.store().canvas_width as i32);
+        let end_cy = (((app.pixel.view.height - screen_cy) / zoom + canvas_cy - app.pixel.view.pan_y).ceil() as i32).min(app.pixel.engine.store().canvas_height as i32);
 
         let stroke = Stroke::new(1.0, Color32::from_white_alpha(20));
 

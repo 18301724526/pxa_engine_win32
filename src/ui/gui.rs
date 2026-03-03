@@ -2,18 +2,22 @@ use crate::app::state::{AppState, AppMode, ToolType};
 use crate::ui::cursor_overlay::CursorOverlay;
 use egui::{FontData, FontDefinitions, FontFamily};
 use crate::ui::title_bar::TitleBar;
-use crate::app::commands::AppCommand;
+use crate::app::commands::*;
 use crate::ui::layer_panel::LayerPanel;
 use crate::ui::timeline::TimelinePanel;
 use crate::ui::toolbar_pixel::ToolbarPixel;
 use crate::ui::toolbar_anim::ToolbarAnim;
 use rust_i18n::t;
+use crate::app::ui_context::UiContext;
 
 pub struct Framework { pub gui: Gui }
-pub struct Gui { fonts_loaded: bool }
+pub struct Gui { 
+    fonts_loaded: bool,
+    pub ui_ctx: UiContext,
+}
 
 impl Gui {
-    pub fn new() -> Self { Self { fonts_loaded: false } }
+    pub fn new() -> Self { Self { fonts_loaded: false, ui_ctx: UiContext::new() } }
 
     fn setup_fonts(&mut self, ctx: &egui::Context) {
         if self.fonts_loaded { return; }
@@ -44,12 +48,11 @@ impl Gui {
     pub fn ui(&mut self, ctx: &egui::Context, app: &mut AppState) {
         self.setup_fonts(ctx);
 
-        if app.mode == AppMode::PixelEdit {
-            if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) { app.undo(); }
-            if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) { app.redo(); }
-            if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::D)) { app.enqueue_command(AppCommand::ClearSelection); }
-            
-            ctx.input(|i| {
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) { app.enqueue_command(Box::new(UndoCmd)); }
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) { app.enqueue_command(Box::new(RedoCmd)); }
+
+        // 【核心修复 2】：工具快捷键必须在全局接受监听（由 shortcut_manager 判断当前模式下该干嘛）
+        ctx.input(|i| {
             for event in &i.events {
                 if let egui::Event::Text(text) = event {
                     if let Some(cmd) = app.shortcuts.handle_text_input(text, app.mode) {
@@ -58,6 +61,9 @@ impl Gui {
                 }
             }
         });
+
+        if app.mode == AppMode::PixelEdit {
+            if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::D)) { app.enqueue_command(Box::new(ClearSelectionCmd)); }     
         }
 
         let mut style = (*ctx.style()).clone();
@@ -68,7 +74,7 @@ impl Gui {
 
         let frame = egui::Frame::none().fill(egui::Color32::from_rgb(25, 25, 25));
         egui::TopBottomPanel::top("top_bar").frame(frame).show(ctx, |ui| {
-            TitleBar::show(ui, app);
+            TitleBar::show(ui, app, &mut self.ui_ctx);
         });
 
         if app.mode == AppMode::PixelEdit {
@@ -76,40 +82,40 @@ impl Gui {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     ui.vertical_centered(|ui| {
                         ui.add_space(10.0);                    
-                        ToolbarPixel::show(ui, app);
+                        ToolbarPixel::show(ui, app, &mut self.ui_ctx);
                         ui.add_space(10.0);
-                        ui.label(format!("{}: {:.1}x", t!("toolbar.zoom"), app.view.zoom_level));
-                        ui.add(egui::Slider::new(&mut app.view.zoom_level, 0.1..=10.0).step_by(0.1).show_value(false));
+                        ui.label(format!("{}: {:.1}x", t!("toolbar.zoom"), app.pixel.view.zoom_level));
+                        ui.add(egui::Slider::new(&mut app.pixel.view.zoom_level, 0.1..=10.0).step_by(0.1).show_value(false));
                     });
                 });
             });
             egui::SidePanel::right("layer_panel").default_width(180.0).show(ctx, |ui| {
-                LayerPanel::show(ui, app);
+                LayerPanel::show(ui, app, &mut self.ui_ctx);
             });
 
         } else if app.mode == AppMode::Animation {
             egui::SidePanel::right("hierarchy_panel").default_width(220.0).show(ctx, |ui| {
-                LayerPanel::show(ui, app);
+                LayerPanel::show(ui, app, &mut self.ui_ctx);
             });
             egui::TopBottomPanel::bottom("timeline_panel")
                 .resizable(false)
                 .default_height(250.0)
                 .show(ctx, |ui| {
-                    TimelinePanel::show(ui, app);
+                    TimelinePanel::show(ui, app, &mut self.ui_ctx);
                 });
 
             egui::Window::new("Anim Tools")
                 .title_bar(false).resizable(false).collapsible(false)
                 .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(10.0, -10.0))
                 .show(ctx, |ui| {
-                    ToolbarAnim::show(ui, app);
+                    ToolbarAnim::show(ui, app, &mut self.ui_ctx);
                 });
 
             egui::Window::new("Transform Panel")
                 .title_bar(false).resizable(false).collapsible(false)
                 .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -10.0))
                 .show(ctx, |ui| {
-                    crate::ui::bone_transform_panel::BoneTransformPanel::show(ui, app);
+                    crate::ui::bone_transform_panel::BoneTransformPanel::show(ui, app, &mut self.ui_ctx);
                 });
         }
 
@@ -117,13 +123,13 @@ impl Gui {
             let response = ui.allocate_response(ui.available_size(), egui::Sense::click_and_drag());
             
             let scale = ctx.pixels_per_point();
-            let zoom = app.view.zoom_level as f32;
-            let s_cx = app.view.width / 2.0;
-            let s_cy = app.view.height / 2.0;
-            let c_cx = app.engine.store().canvas_width as f32 / 2.0;
-            let c_cy = app.engine.store().canvas_height as f32 / 2.0;
-            let pan_x = app.view.pan_x;
-            let pan_y = app.view.pan_y;
+            let zoom = app.pixel.view.zoom_level as f32;
+            let s_cx = app.pixel.view.width / 2.0;
+            let s_cy = app.pixel.view.height / 2.0;
+            let c_cx = app.pixel.engine.store().canvas_width as f32 / 2.0;
+            let c_cy = app.pixel.engine.store().canvas_height as f32 / 2.0;
+            let pan_x = app.pixel.view.pan_x;
+            let pan_y = app.pixel.view.pan_y;
 
             let get_canvas_pos = |pos: egui::Pos2| -> (u32, u32) {
                 let phys_x = pos.x * scale;
@@ -160,24 +166,24 @@ impl Gui {
                 if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
                     let (cx, cy) = get_canvas_pos(pos);
 
-                    if app.engine.tool_manager().active_type == ToolType::Pen {
-                        let tool = app.engine.tool_manager().tools.get(&ToolType::Pen).unwrap();
+                    if app.pixel.engine.tool_manager().active_type == ToolType::Pen {
+                        let tool = app.pixel.engine.tool_manager().tools.get(&ToolType::Pen).unwrap();
                         let pen = tool.as_any().downcast_ref::<crate::tools::pen::PenTool>().unwrap();
-                        if let (Some(idx), _) = pen.hit_test(&app.engine.store().active_path, cx as f32, cy as f32) {
-                            app.ui.canvas_menu_pos = pos;
-                            app.ui.selected_node_idx = Some(idx);
-                            app.ui.show_canvas_menu = true;
+                        if let (Some(idx), _) = pen.hit_test(&app.pixel.engine.store().active_path, cx as f32, cy as f32) {
+                            self.ui_ctx.canvas_menu_pos = pos;
+                            self.ui_ctx.selected_node_idx = Some(idx);
+                            self.ui_ctx.show_canvas_menu = true;
                         }
-                    } else if app.engine.store().selection.is_active {
-                        app.ui.canvas_menu_pos = pos;
-                        app.ui.show_canvas_menu = true;
+                    } else if app.pixel.engine.store().selection.is_active {
+                        self.ui_ctx.canvas_menu_pos = pos;
+                        self.ui_ctx.show_canvas_menu = true;
                     }
                 }
             }
 
-            if app.ui.show_canvas_menu && app.mode == AppMode::PixelEdit {
+            if self.ui_ctx.show_canvas_menu && app.mode == AppMode::PixelEdit {
                 let area_response = egui::Area::new("canvas_context_menu")
-                    .fixed_pos(app.ui.canvas_menu_pos)
+                    .fixed_pos(self.ui_ctx.canvas_menu_pos)
                     .order(egui::Order::Foreground)
                     .constrain(true)
                     .show(ctx, |ui: &mut egui::Ui| {
@@ -185,30 +191,30 @@ impl Gui {
                             ui.set_max_width(200.0);
                             ui.set_min_width(120.0);
                             
-                            if app.engine.tool_manager().active_type == ToolType::Pen {
-                                if let Some(idx) = app.ui.selected_node_idx {
+                            if app.pixel.engine.tool_manager().active_type == ToolType::Pen {
+                                if let Some(idx) = self.ui_ctx.selected_node_idx {
                                     if ui.button(t!("tool.convert_node")).clicked() {
-                                        app.enqueue_command(AppCommand::TogglePathNodeType(idx));
-                                        app.ui.show_canvas_menu = false;
+                                        app.enqueue_command(Box::new(TogglePathNodeTypeCmd(idx)));
+                                        self.ui_ctx.show_canvas_menu = false;
                                     }
                                     if ui.button(t!("tool.delete_node")).clicked() {
-                                        app.enqueue_command(AppCommand::DeletePathNode(idx));
-                                        app.ui.show_canvas_menu = false;
+                                        app.enqueue_command(Box::new(DeletePathNodeCmd(idx)));
+                                        self.ui_ctx.show_canvas_menu = false;
                                     }
                                 }
                             } else {
                                 if ui.button(t!("tool.deselect")).clicked() {
-                                    app.enqueue_command(AppCommand::ClearSelection);
-                                    app.ui.show_canvas_menu = false;
+                                    app.enqueue_command(Box::new(ClearSelectionCmd));
+                                    self.ui_ctx.show_canvas_menu = false;
                                 }
                                 if ui.button(t!("tool.invert_selection")).clicked() {
-                                    app.enqueue_command(AppCommand::InvertSelection);
-                                    app.ui.show_canvas_menu = false;
+                                    app.enqueue_command(Box::new(InvertSelectionCmd));
+                                    self.ui_ctx.show_canvas_menu = false;
                                 }
                                 ui.separator();
                                 if ui.button(t!("tool.stroke_selection")).clicked() {
-                                    app.enqueue_command(AppCommand::StrokeSelection(1));
-                                    app.ui.show_canvas_menu = false;
+                                    app.enqueue_command(Box::new(StrokeSelectionCmd(1)));
+                                    self.ui_ctx.show_canvas_menu = false;
                                 }
                             }
                         });
@@ -217,7 +223,7 @@ impl Gui {
                     let menu_rect = area_response.response.rect;
                     if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
                         if !menu_rect.contains(pos) {
-                            app.ui.show_canvas_menu = false;
+                            self.ui_ctx.show_canvas_menu = false;
                         }
                     }
                 }
@@ -225,13 +231,13 @@ impl Gui {
             if response.hovered() {
                 let scroll = ui.input(|i| i.scroll_delta.y);
                 if scroll != 0.0 {
-                    app.view.zoom_level = (app.view.zoom_level as f32 + scroll * 0.005).clamp(0.1, 10.0) as f64;
-                    app.view.needs_full_redraw = true;
+                    app.pixel.view.zoom_level = (app.pixel.view.zoom_level as f32 + scroll * 0.005).clamp(0.1, 10.0) as f64;
+                    app.pixel.view.needs_full_redraw = true;
                 }
             }
         });
 
-        if app.ui.show_exit_modal {
+        if self.ui_ctx.show_exit_modal {
             egui::Window::new(t!("dialog.unsaved_title"))
                 .collapsible(false)
                 .resizable(false)
@@ -241,16 +247,16 @@ impl Gui {
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
                         if ui.button(t!("dialog.save_exit")).clicked() {
-                            app.enqueue_command(AppCommand::SaveProject);
-                            app.enqueue_command(AppCommand::ConfirmExit);
+                            app.enqueue_command(Box::new(SaveProjectCmd));
+                            app.enqueue_command(Box::new(ConfirmExitCmd));
                         }
-                        if ui.button(t!("dialog.exit_direct")).clicked() { app.enqueue_command(AppCommand::ConfirmExit); }
-                        if ui.button(t!("dialog.cancel")).clicked() { app.enqueue_command(AppCommand::CancelExit); }
+                        if ui.button(t!("dialog.exit_direct")).clicked() { app.enqueue_command(Box::new(ConfirmExitCmd)); }
+                        if ui.button(t!("dialog.cancel")).clicked() { app.enqueue_command(Box::new(CancelExitCmd)); }
                     });
                 });
         }
 
-        if app.ui.show_resize_modal {
+        if self.ui_ctx.show_resize_modal {
             egui::Window::new(t!("dialog.resize_title"))
                 .collapsible(false)
                 .resizable(false)
@@ -258,12 +264,12 @@ impl Gui {
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(format!("{}:", t!("dialog.width")));
-                        ui.add(egui::TextEdit::singleline(&mut app.ui.resize_new_width).desired_width(60.0));
+                        ui.add(egui::TextEdit::singleline(&mut self.ui_ctx.resize_new_width).desired_width(60.0));
                         ui.label("px");
                     });
                     ui.horizontal(|ui| {
                         ui.label(format!("{}:", t!("dialog.height")));
-                        ui.add(egui::TextEdit::singleline(&mut app.ui.resize_new_height).desired_width(60.0));
+                        ui.add(egui::TextEdit::singleline(&mut self.ui_ctx.resize_new_height).desired_width(60.0));
                         ui.label("px");
                     });
 
@@ -280,10 +286,10 @@ impl Gui {
                         for row in anchors.iter() {
                             ui.horizontal(|ui| {
                                 for &anchor in row.iter() {
-                                    let is_selected = app.ui.resize_anchor == anchor;
+                                    let is_selected = self.ui_ctx.resize_anchor == anchor;
                                     let text = if is_selected { "◉" } else { "○" };
                                     if ui.add_sized([30.0, 30.0], egui::Button::new(text)).clicked() {
-                                        app.ui.resize_anchor = anchor;
+                                        self.ui_ctx.resize_anchor = anchor;
                                     }
                                 }
                             });
@@ -293,16 +299,16 @@ impl Gui {
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
                         if ui.button(t!("dialog.confirm")).clicked() {
-                            let nw = app.ui.resize_new_width.parse::<u32>().unwrap_or(app.engine.store().canvas_width);
-                            let nh = app.ui.resize_new_height.parse::<u32>().unwrap_or(app.engine.store().canvas_height);
-                            app.enqueue_command(AppCommand::ResizeCanvas(nw, nh, app.ui.resize_anchor));
-                            app.ui.show_resize_modal = false;
+                            let nw = self.ui_ctx.resize_new_width.parse::<u32>().unwrap_or(app.pixel.engine.store().canvas_width);
+                            let nh = self.ui_ctx.resize_new_height.parse::<u32>().unwrap_or(app.pixel.engine.store().canvas_height);
+                            app.enqueue_command(Box::new(ResizeCanvasCmd(nw, nh, self.ui_ctx.resize_anchor)));
+                            self.ui_ctx.show_resize_modal = false;
                         }
-                        if ui.button(t!("dialog.cancel")).clicked() { app.ui.show_resize_modal = false; }
+                        if ui.button(t!("dialog.cancel")).clicked() { self.ui_ctx.show_resize_modal = false; }
                     });
                 });
         }
-        if let Some(err_msg) = app.ui.error_message.clone() {
+        if let Some(err_msg) = self.ui_ctx.error_message.clone() {
             egui::Window::new(t!("dialog.prompt"))
                 .collapsible(false)
                 .resizable(false)
@@ -312,7 +318,7 @@ impl Gui {
                     ui.add_space(10.0);
                     ui.vertical_centered(|ui| {
                         if ui.button(t!("dialog.confirm")).clicked() {
-                            app.ui.error_message = None;
+                            self.ui_ctx.error_message = None;
                         }
                     });
                 });

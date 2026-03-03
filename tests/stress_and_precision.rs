@@ -3,9 +3,10 @@ use pxa_engine_win32::core::layer::Layer;
 use pxa_engine_win32::core::color::Color;
 use crc32fast::Hasher;
 
+// 修正：Session 化后的状态访问
 fn get_state_hash(app: &AppState) -> u32 {
     let mut hasher = Hasher::new();
-    let store = app.engine.store();
+    let store = app.pixel.engine.store();
 
     hasher.update(store.active_layer_id.as_deref().unwrap_or("none").as_bytes());
     hasher.update(&[store.primary_color.r, store.primary_color.g, store.primary_color.b, store.primary_color.a]);
@@ -72,17 +73,15 @@ fn test_chaos_stress_fuzz() {
                 app.add_new_layer();
             }
             6 => {
-                if app.engine.store().layers.len() > 1 {
+                // 修正：Session 路径
+                if app.pixel.engine.store().layers.len() > 1 {
                     app.delete_active_layer();
                 }
             }
             7 | 8 => {
-
                 let _ = app.on_mouse_up(); 
-                
                 let pre_undo = get_state_hash(&app);
                 app.undo();
-
                 app.redo();
                 let post_redo = get_state_hash(&app);
                 
@@ -100,20 +99,21 @@ fn test_chaos_stress_fuzz() {
 #[test]
 fn test_high_zoom_accuracy() {
     let mut app = AppState::new();
-    app.view.update_viewport(1000.0, 1000.0);
-    app.view.zoom_level = 100.0;
-    app.view.pan_x = 0.0;
-    app.view.pan_y = 0.0;
+    // 修正：路径嵌套与连字符错误
+    app.pixel.view.update_viewport(1000.0, 1000.0);
+    app.pixel.view.zoom_level = 100.0;
+    app.pixel.view.pan_x = 0.0;
+    app.pixel.view.pan_y = 0.0;
 
-    let store = app.engine.store();
-    let center_canvas = app.view.screen_to_canvas(store, 500.0, 500.0).unwrap();
+    let store = app.pixel.engine.store();
+    let center_canvas = app.pixel.view.screen_to_canvas(store, 500.0, 500.0).unwrap();
     assert_eq!(center_canvas, (64, 64));
 
     let pixel_step = 100.0;
-    let next_pixel = app.view.screen_to_canvas(store, 500.0 + pixel_step, 500.0).unwrap();
+    let next_pixel = app.pixel.view.screen_to_canvas(store, 500.0 + pixel_step, 500.0).unwrap();
     assert_eq!(next_pixel, (65, 64));
 
-    let sub_pixel = app.view.screen_to_canvas(store, 500.0 + 49.9, 500.0 + 49.9).unwrap();
+    let sub_pixel = app.pixel.view.screen_to_canvas(store, 500.0 + 49.9, 500.0 + 49.9).unwrap();
     assert_eq!(sub_pixel, (64, 64));
 }
 

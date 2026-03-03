@@ -1,12 +1,12 @@
 use egui::{Ui, Color32, RichText};
 use crate::app::state::AppState;
-use crate::app::commands::AppCommand;
+use crate::app::commands::*;
 
 pub struct BoneTransformPanel;
 
 impl BoneTransformPanel {
-    pub fn show(ui: &mut Ui, app: &mut AppState) {
-        let store = app.engine.store();
+    pub fn show(ui: &mut Ui, app: &mut AppState, ui_ctx: &mut crate::app::ui_context::UiContext) {
+        let store = app.pixel.engine.store();
         let center_x = store.canvas_width as f32 / 2.0;
         let center_y = store.canvas_height as f32 / 2.0;
         let mut needs_update = false;
@@ -19,14 +19,14 @@ impl BoneTransformPanel {
             ui.spacing_mut().item_spacing.x = 12.0;
             ui.label(RichText::new("Transform").strong().color(Color32::LIGHT_GRAY));
 
-            let coord_text = if app.ui.show_world_transform { "World" } else { "Local" };
+            let coord_text = if ui_ctx.show_world_transform { "World" } else { "Local" };
             if ui.button(coord_text).clicked() {
-                app.enqueue_command(AppCommand::ToggleTransformCoordinateSystem);
+                app.enqueue_command(Box::new(ToggleTransformCoordinateSystemCmd));
             }
-            ui.checkbox(&mut app.ui.auto_keyframe, "Auto-Key");
+            ui.checkbox(&mut ui_ctx.auto_keyframe, "Auto-Key");
 
-            if let Some(bone_id) = &app.ui.selected_bone_id {
-                if let Some(bone) = app.animation.project.skeleton.bones.iter_mut().find(|b| b.data.id == *bone_id) {
+            if let Some(bone_id) = &ui_ctx.selected_bone_id {
+                if let Some(bone) = app.anim.state.project.skeleton.bones.iter_mut().find(|b| b.data.id == *bone_id) {
                     
                     ui.separator();
                     ui.label("Rot:");
@@ -62,7 +62,7 @@ impl BoneTransformPanel {
                     }
                 }
                 if ui.button("Key Frame").clicked() {
-                    app.enqueue_command(AppCommand::InsertManualKeyframe(bone_id.clone()));
+                    app.enqueue_command(Box::new(InsertManualKeyframeCmd(bone_id.clone())));
                 }
             } else {
                 ui.label(RichText::new("未选中骨骼").color(Color32::DARK_GRAY));
@@ -71,15 +71,15 @@ impl BoneTransformPanel {
 
         if needs_update {
             app.is_dirty = true;
-            app.view.needs_full_redraw = true;
-            app.animation.project.skeleton.update();
+            app.pixel.view.needs_full_redraw = true;
+            app.anim.state.project.skeleton.update();
 
-            if let Some(bone_id) = &app.ui.selected_bone_id {
+            if let Some(bone_id) = &ui_ctx.selected_bone_id {
                 let id = bone_id.clone();
-                if app.ui.auto_keyframe {
-                    if rot_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Rotation); }
-                    if pos_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Translation); }
-                    if scale_changed { app.animation.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Scale); }
+                if ui_ctx.auto_keyframe {
+                    if rot_changed { app.anim.state.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Rotation); }
+                    if pos_changed { app.anim.state.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Translation); }
+                    if scale_changed { app.anim.state.auto_key_bone(&id, crate::core::animation::timeline::TimelineProperty::Scale); }
                 }
             }
         }

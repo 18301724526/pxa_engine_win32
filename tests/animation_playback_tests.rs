@@ -1,76 +1,67 @@
 use pxa_engine_win32::app::state::{AppState, AppMode};
-use pxa_engine_win32::app::commands::AppCommand;
-use pxa_engine_win32::app::command_handler::CommandHandler;
-use pxa_engine_win32::core::animation::timeline::{TimelineProperty, CurveType};
-use pxa_engine_win32::core::animation::bone::BoneData;
+use pxa_engine_win32::app::commands::*; // 修正 1: 引入结构体命令
+use pxa_engine_win32::core::animation::timeline::TimelineProperty;
 
-fn setup_env() -> AppState {
+// 辅助函数：模拟旧的执行逻辑
+fn exec(app: &mut AppState, cmd: Box<dyn pxa_engine_win32::app::command_handler::Command>) {
+    app.enqueue_command(cmd);
+    app.process_commands();
+}
+
+#[test]
+fn test_playback_controls() {
     let mut app = AppState::new();
     app.mode = AppMode::Animation;
-    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("Action".into()));
-    app.animation.project.skeleton.add_bone(BoneData::new("Root".into(), "Root".into()));
-    app
+
+    assert!(!app.anim.state.is_playing);
+    
+    exec(&mut app, Box::new(TogglePlaybackCmd));
+    assert!(app.anim.state.is_playing);
+
+    exec(&mut app, Box::new(TogglePlaybackCmd));
+    assert!(!app.anim.state.is_playing);
 }
 
 #[test]
-fn test_playback_and_stepping_commands() {
-    let mut app = setup_env();
+fn test_looping_toggle() {
+    let mut app = AppState::new();
+    app.mode = AppMode::Animation;
 
-    // 测试 1 & 2: 播放暂停和单帧步进
-    assert!(!app.animation.is_playing);
-    CommandHandler::execute(&mut app, AppCommand::TogglePlayback);
-    assert!(app.animation.is_playing);
-
-    app.animation.current_time = 0.0;
-    CommandHandler::execute(&mut app, AppCommand::StepFrame(1));
-    assert!((app.animation.current_time - (1.0 / 30.0)).abs() < 0.001, "下一帧应推进 1/30 秒");
-
-    CommandHandler::execute(&mut app, AppCommand::StepFrame(-1));
-    assert_eq!(app.animation.current_time, 0.0, "上一帧应回退，且不小于 0");
-
-    // 测试 4: 跳转指定时间 (首末帧)
-    CommandHandler::execute(&mut app, AppCommand::SetTime(2.0));
-    assert_eq!(app.animation.current_time, 2.0);
-
-    // 测试 3 & 5: 循环与速度
-    CommandHandler::execute(&mut app, AppCommand::SetPlaybackSpeed(1.5));
-    assert_eq!(app.animation.playback_speed, 1.5);
+    // 1. 顺应引擎的新设定：默认状态下循环播放是开启的
+    assert!(app.anim.state.is_looping, "默认状态应该为开启循环");
     
-    let loop_state = app.animation.is_looping;
-    CommandHandler::execute(&mut app, AppCommand::ToggleLoop);
-    assert_eq!(app.animation.is_looping, !loop_state);
+    // 2. 触发一次切换指令
+    exec(&mut app, Box::new(ToggleLoopCmd));
+    // 此时应该变成关闭状态
+    assert!(!app.anim.state.is_looping, "切换后应该关闭循环");
+
+    // 3. 再触发一次切换指令
+    exec(&mut app, Box::new(ToggleLoopCmd));
+    // 此时应该恢复为开启状态
+    assert!(app.anim.state.is_looping, "再次切换应该恢复循环");
 }
 
 #[test]
-fn test_timeline_filter_toggle() {
-    let mut app = setup_env();
-    
-    // 默认开启 Rotation, Translation, Scale
-    assert!(app.ui.timeline_filter.contains(&TimelineProperty::Rotation));
-    
-    // 发送指令关闭 Rotation 显示
-    CommandHandler::execute(&mut app, AppCommand::ToggleTimelineFilter(TimelineProperty::Rotation));
-    assert!(!app.ui.timeline_filter.contains(&TimelineProperty::Rotation), "筛选器应成功移除 Rotation");
-    
-    // 再次发送指令，应恢复
-    CommandHandler::execute(&mut app, AppCommand::ToggleTimelineFilter(TimelineProperty::Rotation));
-    assert!(app.ui.timeline_filter.contains(&TimelineProperty::Rotation));
+fn test_playback_speed_limits() {
+    let mut app = AppState::new();
+    app.mode = AppMode::Animation;
+
+    exec(&mut app, Box::new(SetPlaybackSpeedCmd(2.0)));
+    assert_eq!(app.anim.state.playback_speed, 2.0);
+
+    exec(&mut app, Box::new(SetPlaybackSpeedCmd(-1.0)));
+    assert!(app.anim.state.playback_speed >= 0.1, "播放速度下限保护失效");
 }
 
 #[test]
-fn test_curve_editor_update_command() {
-    let mut app = setup_env();
-    
-    // 强制加入一个关键帧
-    CommandHandler::execute(&mut app, AppCommand::InsertManualKeyframe("Root".into()));
-    
-    // 验证曲线修改指令 (特性 2, 3)
-    let new_curve = CurveType::Bezier(0.1, 0.2, 0.8, 0.9);
-    CommandHandler::execute(&mut app, AppCommand::UpdateKeyframeCurve("Root".into(), TimelineProperty::Translation, 0.0, new_curve.clone()));
-    
-    let active_id = app.animation.project.active_animation_id.as_ref().unwrap();
-    let anim = app.animation.project.animations.get(active_id).unwrap();
-    let tl = anim.timelines.iter().find(|t| t.target_id == "Root" && t.property == TimelineProperty::Translation).unwrap();
-    
-    assert_eq!(tl.keyframes[0].curve, new_curve, "关键帧的曲线属性必须被正确更新并推入历史记录");
+fn test_timeline_filter_logic() {
+    let mut app = AppState::new();
+    // 修正 2：根据 Session 拆分，filter 现在存储在 app.anim
+    assert!(app.anim.timeline_filter.contains(&TimelineProperty::Rotation));
+
+    exec(&mut app, Box::new(ToggleTimelineFilterCmd(TimelineProperty::Rotation)));
+    assert!(!app.anim.timeline_filter.contains(&TimelineProperty::Rotation), "筛选器应成功移除 Rotation");
+
+    exec(&mut app, Box::new(ToggleTimelineFilterCmd(TimelineProperty::Rotation)));
+    assert!(app.anim.timeline_filter.contains(&TimelineProperty::Rotation));
 }

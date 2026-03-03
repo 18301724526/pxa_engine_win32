@@ -1,7 +1,6 @@
 use crate::core::store::PixelStore;
 use crate::history::patch::ActionPatch;
 use super::tool_trait::Tool;
-use crate::core::id_gen;
 use crate::core::symmetry::SymmetryConfig;
 use crate::core::selection::SelectionData;
 use crate::core::error::CoreError;
@@ -39,7 +38,7 @@ impl Tool for RectSelectTool {
         Ok(())
     }
 
-    fn on_pointer_up(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_pointer_up(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         let (_sx, _sy) = match self.start_pos.take() {
             Some(pos) => pos,
             None => return Ok(None),
@@ -56,11 +55,11 @@ impl Tool for RectSelectTool {
         
         let new = store.selection.clone();
         if old == new { return Ok(None); }
-        Ok(Some(ActionPatch::new_selection_change(id_gen::gen_id(), old, new)))
+        Ok(Some(ActionPatch::new_selection_change(id_gen.generate(), old, new)))
     }
 
-fn on_commit(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
-    self.on_pointer_up(store)
+fn on_commit(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
+    self.on_pointer_up(store, id_gen)
 }
 
 fn on_cancel(&mut self, store: &mut PixelStore) {

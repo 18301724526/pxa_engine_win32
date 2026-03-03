@@ -17,6 +17,8 @@ struct Vertex {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
+    viewport: [f32; 4],
+    view_params: [f32; 4],
 }
 
 pub struct AnimCompositor {
@@ -57,7 +59,7 @@ impl AnimCompositor {
             label: Some("anim_uniform_layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -95,11 +97,12 @@ impl AnimCompositor {
                         attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2],
                     },
                     wgpu::VertexBufferLayout {
-                        array_stride: 80, 
+                        array_stride: 136,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &wgpu::vertex_attr_array![
                             2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 
-                            6 => Float32x4 
+                            6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4,
+                            10 => Float32x2
                         ],
                     },
                 ],
@@ -161,8 +164,8 @@ impl AnimCompositor {
         _selected_id: Option<&String>,
         instance_buffers: &'a [wgpu::Buffer],
     ) {
-        let world_to_clip = self.calculate_projection(view);
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[Uniforms { view_proj: world_to_clip }]));
+        let uniforms = self.calculate_projection(view, store.canvas_width as f32, store.canvas_height as f32);
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
@@ -188,19 +191,24 @@ impl AnimCompositor {
         }
     }
 
-    fn calculate_projection(&self, v: Viewport) -> [[f32; 4]; 4] {
+    fn calculate_projection(&self, v: Viewport, cw: f32, ch: f32) -> Uniforms {
         let zoom = v.zoom;
         let sw = v.screen_width as f32;
         let sh = v.screen_height as f32;
 
-        let c_cx = (sw * 0.5) / zoom; 
-        let c_cy = (sh * 0.5) / zoom;
+        let canvas_cx = cw / 2.0;
+        let canvas_cy = ch / 2.0;
 
         let scale_x = 2.0 * zoom / sw;
         let scale_y = -2.0 * zoom / sh;
-        let tx = ((v.pan_x - c_cx) * zoom) * (2.0 / sw) + 1.0;
-        let ty = ((v.pan_y - c_cy) * zoom) * (-2.0 / sh) - 1.0;
-        [[scale_x, 0.0, 0.0, 0.0], [0.0, scale_y, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [tx, ty, 0.0, 1.0]]
+        let tx = (-canvas_cx + v.pan_x) * scale_x;
+        let ty = (-canvas_cy + v.pan_y) * scale_y;
+
+        Uniforms {
+            view_proj: [[scale_x, 0.0, 0.0, 0.0], [0.0, scale_y, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [tx, ty, 0.0, 1.0]],
+            viewport: [sw, sh, cw, ch],
+            view_params: [zoom, v.pan_x, v.pan_y, 0.0],
+        }
     }
 
     pub fn render_cpu(

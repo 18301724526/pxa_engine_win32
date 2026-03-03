@@ -33,7 +33,7 @@ impl Tool for EyedropperTool {
         Ok(())
     }
 
-    fn on_pointer_up(&mut self, _store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> { Ok(None) }
+    fn on_pointer_up(&mut self, _store: &mut PixelStore, _id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> { Ok(None) }
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 }

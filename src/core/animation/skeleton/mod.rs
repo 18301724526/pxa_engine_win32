@@ -1,51 +1,48 @@
-use super::bone::BoneData;
-use super::slot::RuntimeSlot;
-use super::transform::Transform;
+pub mod data;
+pub mod ops;
+
+pub use data::RuntimeBone;
+
+use crate::core::animation::bone::BoneData;
+use crate::core::animation::slot::RuntimeSlot;
+use crate::core::animation::storage::SkeletonStorage;
 use std::collections::HashMap;
-
-#[derive(Debug, Clone)]
-pub struct RuntimeBone {
-    pub data: BoneData,
-    pub local_transform: Transform,
-    pub world_matrix: [f32; 6], 
-    pub parent_index: Option<usize>,
-}
-
-impl RuntimeBone {
-    pub fn new(data: BoneData) -> Self {
-        let local_transform = data.local_transform;
-        Self {
-            data,
-            local_transform,
-            world_matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-            parent_index: None,
-        }
-    }
-}
+use std::any::Any;
 
 #[derive(Debug, Clone, Default)]
 pub struct Skeleton {
     pub bones: Vec<RuntimeBone>,
     pub slots: Vec<RuntimeSlot>,
-    name_to_index: HashMap<String, usize>,
+    // 使用 pub(super) 让 ops.rs 可以访问它，但对整个引擎的其他部分保持私有
+    pub(super) name_to_index: HashMap<String, usize>, 
+}
+
+impl SkeletonStorage for Skeleton {
+    fn get_bone_world_position(&self, id: &str) -> Option<(f32, f32)> { self.get_bone_world_position(id) }
+    fn get_parent_world_matrix(&self, bone_idx: usize) -> [f32; 6] { self.get_parent_world_matrix(bone_idx) }
+    fn update(&mut self) { self.update() }
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 impl Skeleton {
     pub fn new() -> Self {
-        Self::default()
+        let mut skel = Self::default();
+        skel.add_bone(BoneData::new("root".into(), "root".into()));
+        skel
+    }
+
+    /// 根据骨骼 ID 获取内部索引
+    pub fn bone_id_to_index(&self, id: &str) -> Option<usize> {
+        self.name_to_index.get(id).copied()
     }
 
     pub fn add_bone(&mut self, data: BoneData) {
-        let mut bone = RuntimeBone::new(data);
-        
-        if let Some(parent_id) = &bone.data.parent_id {
-            if let Some(&idx) = self.name_to_index.get(parent_id) {
-                bone.parent_index = Some(idx);
-            }
-        }
-
-        self.name_to_index.insert(bone.data.id.clone(), self.bones.len());
+        let bone = RuntimeBone::new(data);
         self.bones.push(bone);
+        
+        // 委托给统一的重建逻辑，确保状态一致
+        self.rebuild_internal_state();
     }
 
     pub fn update(&mut self) {
@@ -86,10 +83,11 @@ impl Skeleton {
     }
     
     pub fn get_bone_world_position(&self, id: &str) -> Option<(f32, f32)> {
-        let idx = self.name_to_index.get(id)?;
-        let m = self.bones[*idx].world_matrix;
+        let idx = self.bone_id_to_index(id)?;
+        let m = self.bones[idx].world_matrix;
         Some((m[4], m[5])) 
     }
+
     pub fn get_parent_world_matrix(&self, bone_idx: usize) -> [f32; 6] {
         match self.bones[bone_idx].parent_index {
             Some(p_idx) => self.bones[p_idx].world_matrix,
@@ -106,10 +104,10 @@ mod tests {
     fn test_skeleton_hierarchy_math() {
         let mut skel = Skeleton::new();
 
-        let mut root_data = BoneData::new("root".into(), "Root".into());
-        root_data.local_transform.x = 100.0;
-        root_data.local_transform.y = 100.0;
-        skel.add_bone(root_data);
+        if let Some(idx) = skel.bone_id_to_index("root") {
+            skel.bones[idx].local_transform.x = 100.0;
+            skel.bones[idx].local_transform.y = 100.0;
+        }
 
         let mut child_data = BoneData::new("child".into(), "Child".into());
         child_data.parent_id = Some("root".into());

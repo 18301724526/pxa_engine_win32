@@ -106,8 +106,8 @@ impl Compositor {
                     let mut fc = [0, 0, 0, 0];
 
                     for cache in &mut layer_caches {
-                        let mut lx;
-                        let mut ly;
+                        let lx;
+                        let ly;
                         
                         if let Some(matrix) = cache.anim_transform {
                             let orig_tx = matrix[0] * (tx as f32) + matrix[2] * (ty as f32) + matrix[4];

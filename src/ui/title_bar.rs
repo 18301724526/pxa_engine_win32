@@ -1,6 +1,6 @@
 use egui::{Ui, Sense, Color32};
 use crate::app::state::{AppState, ToolType};
-use crate::app::commands::AppCommand;
+use crate::app::commands::*;
 use crate::ui::menu_file::MenuFile;
 use crate::ui::menu_image::MenuImage;
 use crate::app::state::AppMode;
@@ -10,7 +10,7 @@ use rust_i18n::t;
 pub struct TitleBar;
 
 impl TitleBar {
-    pub fn show(ui: &mut Ui, app: &mut AppState) {
+    pub fn show(ui: &mut Ui, app: &mut AppState, ui_ctx: &mut crate::app::ui_context::UiContext) {
         let bar_height = 32.0;
         
         let full_rect = ui.available_rect_before_wrap();
@@ -38,8 +38,8 @@ impl TitleBar {
             });
             ui.separator();
             
-            MenuFile::show(ui, app);
-            MenuImage::show(ui, app);
+            MenuFile::show(ui, app, ui_ctx);
+            MenuImage::show(ui, app, ui_ctx);
 
             ui.menu_button(t!("menu.language"), |ui| {
                 let langs = [
@@ -54,8 +54,8 @@ impl TitleBar {
                     ("ru", "Русский"),
                 ];
                 for (code, name) in langs {
-                    if ui.radio(app.ui.language == code, name).clicked() {
-                        app.enqueue_command(AppCommand::SetLanguage(code.into()));
+                    if ui.radio(ui_ctx.language == code, name).clicked() {
+                        app.enqueue_command(Box::new(SetLanguageCmd(code.into())));
                         ui.close_menu();
                     }
                 }
@@ -65,11 +65,11 @@ impl TitleBar {
             let response = ui.interact(rect, ui.id().with("drag_area"), Sense::drag());
             
             if response.drag_started() {
-                app.enqueue_command(AppCommand::WindowDrag);
+                app.enqueue_command(Box::new(WindowDragCmd));
             }
             
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                WindowControls::show(ui, app);
+                WindowControls::show(ui, app, ui_ctx);
             });
         });
     }

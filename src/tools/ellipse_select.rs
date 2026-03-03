@@ -1,7 +1,6 @@
 use crate::core::store::PixelStore;
 use crate::history::patch::ActionPatch;
 use super::tool_trait::Tool;
-use crate::core::id_gen;
 use crate::core::symmetry::SymmetryConfig;
 use crate::core::selection::SelectionData;
 use crate::core::error::CoreError;
@@ -39,7 +38,7 @@ impl Tool for EllipseSelectTool {
         Ok(())
     }
 
-    fn on_pointer_up(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_pointer_up(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         self.start_pos = None;
         let old = match self.old_selection.take() { 
             Some(s) => s, 
@@ -54,7 +53,7 @@ impl Tool for EllipseSelectTool {
         
         if old == new { return Ok(None); }
         
-        Ok(Some(ActionPatch::new_selection_change(id_gen::gen_id(), old, new)))
+        Ok(Some(ActionPatch::new_selection_change(id_gen.generate(), old, new)))
     }
 
     fn take_dirty_rect(&mut self) -> Option<(u32, u32, u32, u32)> {

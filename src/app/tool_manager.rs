@@ -62,11 +62,11 @@ impl ToolManager {
         Ok(())
     }
 
-    pub fn handle_pointer_up(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    pub fn handle_pointer_up(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         if !self.is_drawing { return Ok(None); }
         self.is_drawing = false;
         if let Some(tool) = self.tools.get_mut(&self.active_type) {
-            tool.on_pointer_up(store)
+            tool.on_pointer_up(store, id_gen)
         } else {
             Ok(None)
         }

@@ -5,7 +5,6 @@ use crate::core::symmetry::SymmetryConfig;
 use crate::core::error::CoreError;
 use crate::core::path::{BezierPath, Vec2, NodeType};
 use std::any::Any;
-use crate::core::id_gen;
 use crate::core::selection::SelectionData;
 use super::geometry::Geometry;
 
@@ -65,14 +64,14 @@ impl PenTool {
         (None, None)
     }
 
-    pub fn fill(&self, store: &PixelStore) -> Option<ActionPatch> {
+    pub fn fill(&self, store: &PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Option<ActionPatch> {
         if store.active_path.nodes.len() < 3 { return None; }
         let layer_id = store.active_layer_id.as_ref()?;
         let layer = store.get_layer(layer_id)?;
         let points = store.active_path.flatten(0.5);
         let mut temp_sel = SelectionData::new(store.canvas_width, store.canvas_height);
         temp_sel.set_from_polygon(&points);
-        let mut patch = ActionPatch::new_pixel_diff(id_gen::gen_id(), layer_id.clone());
+        let mut patch = ActionPatch::new_pixel_diff(id_gen.generate(), layer_id.clone());
         let color = store.primary_color;
         for y in 0..store.canvas_height {
             for x in 0..store.canvas_width {
@@ -89,11 +88,11 @@ impl PenTool {
         if patch.is_empty() { None } else { Some(patch) }
     }
 
-    pub fn stroke(&self, store: &PixelStore) -> Option<ActionPatch> {
+    pub fn stroke(&self, store: &PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Option<ActionPatch> {
         if store.active_path.nodes.is_empty() { return None; }
         let layer_id = store.active_layer_id.clone()?;
         let points = store.active_path.flatten(0.5);
-        let mut patch = ActionPatch::new_pixel_diff(id_gen::gen_id(), layer_id.clone());
+        let mut patch = ActionPatch::new_pixel_diff(id_gen.generate(), layer_id.clone());
         let color = store.primary_color;
         let mut drawn_points = std::collections::HashSet::new();
         for i in 0..points.len() {
@@ -213,7 +212,7 @@ impl Tool for PenTool {
         Ok(())
     }
 
-    fn on_pointer_up(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_pointer_up(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         let mode_was = self.mode;
         self.mode = PenMode::Idle;
         
@@ -223,11 +222,11 @@ impl Tool for PenTool {
                 if old_path == *current_path && idx < store.active_path.nodes.len() {
                     store.active_path.nodes.remove(idx);
                     self.selected_node_idx = None;
-                    return Ok(Some(ActionPatch::new_path_change(id_gen::gen_id(), old_path, store.active_path.clone())));
+                    return Ok(Some(ActionPatch::new_path_change(id_gen.generate(), old_path, store.active_path.clone())));
                 }
             }
             if old_path != *current_path {
-                return Ok(Some(ActionPatch::new_path_change(id_gen::gen_id(), old_path, current_path.clone())));
+                return Ok(Some(ActionPatch::new_path_change(id_gen.generate(), old_path, current_path.clone())));
             }
         }
 
@@ -253,7 +252,7 @@ impl Tool for PenTool {
         self.hover_start_point = false;
     }
 
-    fn on_commit(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_commit(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         if store.active_path.nodes.len() < 3 { return Ok(None); }
         let points = store.active_path.flatten(0.5);
         let old_sel = store.selection.clone();
@@ -264,7 +263,7 @@ impl Tool for PenTool {
         store.active_path.is_closed = false;
         self.selected_node_idx = None;
 
-        Ok(Some(ActionPatch::new_selection_change(id_gen::gen_id(), old_sel, new_sel)))
+        Ok(Some(ActionPatch::new_selection_change(id_gen.generate(), old_sel, new_sel)))
     }
 
     fn as_any(&self) -> &dyn Any { self }

@@ -1,11 +1,11 @@
 use egui::{Ui, Rect, Sense, Color32, Stroke, vec2};
 use crate::app::state::AppState;
-use crate::app::commands::AppCommand;
+use crate::app::commands::*;
 
 pub struct WindowControls;
 
 impl WindowControls {
-    pub fn show(ui: &mut Ui, app: &mut AppState) {
+    pub fn show(ui: &mut Ui, app: &mut AppState, _ui_ctx: &mut crate::app::ui_context::UiContext) {
         ui.spacing_mut().item_spacing.x = 0.0; 
         
         let btn_size = vec2(46.0, 32.0); 
@@ -16,7 +16,7 @@ impl WindowControls {
             ui.painter().rect_filled(rect_close, 0.0, Color32::from_rgb(232, 17, 35));
         }
         if resp_close.clicked() {
-            app.enqueue_command(AppCommand::RequestExit);
+            app.enqueue_command(Box::new(RequestExitCmd));
         }
         
         let center = rect_close.center();
@@ -32,7 +32,7 @@ impl WindowControls {
             ui.painter().rect_filled(rect_max, 0.0, Color32::from_white_alpha(25));
         }
         if resp_max.clicked() {
-            app.enqueue_command(AppCommand::WindowMaximize);
+            app.enqueue_command(Box::new(WindowMaximizeCmd));
         }
 
         let center = rect_max.center();
@@ -50,7 +50,7 @@ impl WindowControls {
             ui.painter().rect_filled(rect_min, 0.0, Color32::from_white_alpha(25));
         }
         if resp_min.clicked() {
-            app.enqueue_command(AppCommand::WindowMinimize);
+            app.enqueue_command(Box::new(WindowMinimizeCmd));
         }
 
         let center = rect_min.center();

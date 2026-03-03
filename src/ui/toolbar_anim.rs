@@ -4,14 +4,14 @@ use crate::app::state::{AppState, ToolType};
 pub struct ToolbarAnim;
 
 impl ToolbarAnim {
-    pub fn show(ui: &mut Ui, app: &mut AppState) {
+    pub fn show(ui: &mut Ui, app: &mut AppState, _ui_ctx: &mut crate::app::ui_context::UiContext) {
         ui.horizontal(|ui| {
-            let mut is_rotate = app.engine.tool_manager().active_type == ToolType::BoneRotate;
+            let mut is_rotate = app.pixel.engine.tool_manager().active_type == ToolType::BoneRotate;
             if ui.toggle_value(&mut is_rotate, "⟳ 旋转").clicked() && is_rotate {
                 app.set_tool(ToolType::BoneRotate);
             }
 
-            let mut is_move = app.engine.tool_manager().active_type == ToolType::BoneTranslate;
+            let mut is_move = app.pixel.engine.tool_manager().active_type == ToolType::BoneTranslate;
             if ui.toggle_value(&mut is_move, "✥ 移动").clicked() && is_move {
                 app.set_tool(ToolType::BoneTranslate);
             }

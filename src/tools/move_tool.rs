@@ -1,7 +1,6 @@
 use crate::core::store::PixelStore;
 use crate::history::patch::ActionPatch;
 use super::tool_trait::Tool;
-use crate::core::id_gen;
 use crate::core::symmetry::SymmetryConfig;
 use crate::core::layer::{Layer, CHUNK_SIZE};
 use crate::core::selection::SelectionData;
@@ -73,13 +72,13 @@ impl Tool for MoveTool {
                     layer.chunks = backup.chunks.clone();
                 }
                 for &(cx, cy, _) in &self.extracted_pixels {
-                    layer.set_pixel(cx, cy, Color::transparent())?;
+                    layer.set_pixel_raw(cx, cy, Color::transparent())?;
                 }
                 for &(cx, cy, color) in &self.extracted_pixels {
                     let new_cx = cx as i32 + dx;
                     let new_cy = cy as i32 + dy;
                     if new_cx >= 0 && new_cx < layer.width as i32 && new_cy >= 0 && new_cy < layer.height as i32 {
-                        layer.set_pixel(new_cx as u32, new_cy as u32, color)?;
+                        layer.set_pixel_raw(new_cx as u32, new_cy as u32, color)?;
                     }
                 }
             }
@@ -102,7 +101,7 @@ impl Tool for MoveTool {
         Ok(())
     }
 
-    fn on_pointer_up(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
+    fn on_pointer_up(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         self.start_pos = None;
         self.extracted_pixels.clear();
         let backup = match self.layer_backup.take() { Some(b) => b, None => return Ok(None) };
@@ -115,17 +114,17 @@ impl Tool for MoveTool {
                 return Ok(None);
             }
             if backup.offset_x != current.offset_x || backup.offset_y != current.offset_y {
-                return Ok(Some(ActionPatch::new_layer_offset(id_gen::gen_id(), layer_id, (backup.offset_x, backup.offset_y), (current.offset_x, current.offset_y))));
+                return Ok(Some(ActionPatch::new_layer_offset(id_gen.generate(), layer_id, (backup.offset_x, backup.offset_y), (current.offset_x, current.offset_y))));
             }
         } else {
             let mut sub_patches = Vec::new();
             let new_sel = store.selection.clone();
             
             if sel_backup.mask != new_sel.mask || sel_backup.is_active != new_sel.is_active {
-                sub_patches.push(ActionPatch::new_selection_change(id_gen::gen_id(), sel_backup.clone(), new_sel));
+                sub_patches.push(ActionPatch::new_selection_change(id_gen.generate(), sel_backup.clone(), new_sel));
             }
 
-            let mut pixel_patch = ActionPatch::new_pixel_diff(id_gen::gen_id(), layer_id.clone());
+            let mut pixel_patch = ActionPatch::new_pixel_diff(id_gen.generate(), layer_id.clone());
             for (key, old_chunk) in &backup.chunks {
                 if let Some(new_chunk) = current.chunks.get(key) {
                     if new_chunk.data.as_ref() != old_chunk.data.as_ref() {
@@ -161,7 +160,7 @@ impl Tool for MoveTool {
             if !pixel_patch.is_empty() { sub_patches.push(pixel_patch); }
 
             if !sub_patches.is_empty() {
-                return Ok(Some(ActionPatch::new_composite(id_gen::gen_id(), sub_patches)));
+                return Ok(Some(ActionPatch::new_composite(id_gen.generate(), sub_patches)));
             }
         }
         Ok(None)
@@ -174,8 +173,8 @@ fn take_dirty_rect(&mut self) -> Option<(u32, u32, u32, u32)> {
         } else { None }
     }
 
-    fn on_commit(&mut self, store: &mut PixelStore) -> Result<Option<ActionPatch>, CoreError> {
-        self.on_pointer_up(store)
+    fn on_commit(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
+        self.on_pointer_up(store, id_gen)
     }
 
     fn on_cancel(&mut self, store: &mut PixelStore) {

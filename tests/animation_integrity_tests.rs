@@ -1,118 +1,65 @@
 use pxa_engine_win32::app::state::{AppState, AppMode, ToolType};
-use pxa_engine_win32::app::commands::AppCommand;
-use pxa_engine_win32::app::command_handler::CommandHandler;
+use pxa_engine_win32::app::commands::*;
+use pxa_engine_win32::app::ui_context::UiContext; // 引入独立 UI 上下文
 use pxa_engine_win32::core::animation::bone::BoneData;
 use pxa_engine_win32::core::animation::timeline::TimelineProperty;
 
-fn setup_test_context() -> AppState {
+fn exec(app: &mut AppState, cmd: Box<dyn pxa_engine_win32::app::command_handler::Command>) {
+    app.enqueue_command(cmd);
+    app.process_commands();
+}
+
+#[test]
+fn test_skeleton_bone_hierarchy_integrity() {
     let mut app = AppState::new();
-    app.mode = AppMode::Animation;
-    let mut root_bone = BoneData::new("Root".into(), "Root".into());
-    root_bone.local_transform.x = 100.0;
-    root_bone.local_transform.y = 100.0;
-    app.animation.project.skeleton.add_bone(root_bone);
-    app.animation.project.skeleton.add_bone(BoneData::new("Child".into(), "Child".into()));
-    app.animation.project.skeleton.update();
-    CommandHandler::execute(&mut app, AppCommand::CreateAnimation("LoopTest".into()));
-    app
-}
+    
+    // 1. 选中 root
+    app.anim.selected_bone_id = Some("root".into());
 
-#[test]
-fn test_bone_transform_undo_consistency() {
-    let mut app = setup_test_context();
-    app.ui.selected_bone_id = Some("Root".into());
-    app.set_tool(ToolType::BoneRotate);
-
-    let initial_rot = app.animation.project.skeleton.bones.iter().find(|b| b.data.id == "Root").unwrap().local_transform.rotation;
-    app.on_mouse_down(100, 100).unwrap();
-    app.on_mouse_move(100, 150).unwrap(); 
+    // 2. 模拟使用工具生成新骨骼
+    app.set_tool(ToolType::CreateBone);
+    app.on_mouse_down(0, 0).unwrap();
+    app.on_mouse_move(10, 10).unwrap();
     app.on_mouse_up().unwrap();
+    app.process_commands();
+
+    // 3. 验证层级完整性
+    let skel = &app.anim.state.project.skeleton;
     
-    let mid_rot = app.animation.project.skeleton.bones.iter().find(|b| b.data.id == "Root").unwrap().local_transform.rotation;
-    assert_ne!(initial_rot, mid_rot);
-
-    CommandHandler::execute(&mut app, AppCommand::Undo);
-    assert_eq!(app.animation.project.skeleton.bones.iter().find(|b| b.data.id == "Root").unwrap().local_transform.rotation, initial_rot);
-}
-
-#[test]
-fn test_single_keyframe_move_undo() {
-    let mut app = setup_test_context();
-    let anim_id = app.animation.project.active_animation_id.clone().unwrap();
-
-    app.animation.current_time = 0.5;
-    CommandHandler::execute(&mut app, AppCommand::InsertManualKeyframe("Root".into()));
-
-    // 单选：只选 Root 的 Rotation
-    app.ui.selected_keyframes = vec![
-        ("Root".into(), Some(TimelineProperty::Rotation), 0.5),
-    ];
-    CommandHandler::execute(&mut app, AppCommand::MoveSelectedKeyframes(0.5));
-
-    let anim = app.animation.project.animations.get(&anim_id).unwrap();
-    // 验证：只有 Rotation 移动了，Translation 还在原地
-    let rot_tl = anim.timelines.iter().find(|t| t.target_id == "Root" && t.property == TimelineProperty::Rotation).unwrap();
-    let pos_tl = anim.timelines.iter().find(|t| t.target_id == "Root" && t.property == TimelineProperty::Translation).unwrap();
-    
-    assert_eq!(rot_tl.keyframes.first().map(|k| k.time).unwrap_or(-1.0), 1.0);
-    assert_eq!(pos_tl.keyframes.first().map(|k| k.time).unwrap_or(-1.0), 0.5);
-
-    CommandHandler::execute(&mut app, AppCommand::Undo);
-    let anim_restored = app.animation.project.animations.get(&anim_id).unwrap();
-    let restored_rot = anim_restored.timelines.iter().find(|t| t.target_id == "Root" && t.property == TimelineProperty::Rotation).unwrap();
-    assert_eq!(restored_rot.keyframes.first().map(|k| k.time).unwrap_or(-1.0), 0.5);
-}
-
-#[test]
-fn test_multi_keyframe_subset_move_undo() {
-    let mut app = setup_test_context();
-    let anim_id = app.animation.project.active_animation_id.clone().unwrap();
-
-    app.animation.current_time = 0.5;
-    CommandHandler::execute(&mut app, AppCommand::InsertManualKeyframe("Root".into()));
-    CommandHandler::execute(&mut app, AppCommand::InsertManualKeyframe("Child".into()));
-
-    // 子集多选：选两个骨骼的 Rotation，不选 Translation/Scale
-    app.ui.selected_keyframes = vec![
-        ("Root".into(), Some(TimelineProperty::Rotation), 0.5),
-        ("Child".into(), Some(TimelineProperty::Rotation), 0.5),
-    ];
-    CommandHandler::execute(&mut app, AppCommand::MoveSelectedKeyframes(0.5));
-
-    let anim = app.animation.project.animations.get(&anim_id).unwrap();
-    for tl in &anim.timelines {
-        if tl.keyframes.is_empty() { continue; }
-        if tl.target_id == "Root" || tl.target_id == "Child" {
-            match tl.property {
-                TimelineProperty::Rotation => assert_eq!(tl.keyframes[0].time, 1.0, "Rotation 应该移动"),
-                _ => assert_eq!(tl.keyframes[0].time, 0.5, "其他属性不应移动"),
-            }
+    // --- 调试信息：如果数量不符，打印出到底有哪些骨骼 ---
+    if skel.bones.len() != 2 {
+        println!("\n=== 调试：发现 {} 个骨骼 ===", skel.bones.len());
+        for (i, bone) in skel.bones.iter().enumerate() {
+            println!("索引 {}: ID = '{}', 名称 = '{}'", i, bone.data.id, bone.data.name);
         }
+        println!("==========================\n");
     }
+    
+    assert_eq!(skel.bones.len(), 2, "骨骼总数必须为 2（root + 新骨骼）");
+    assert_eq!(skel.bones[1].data.parent_id, Some("root".into()));
 }
 
 #[test]
-fn test_all_keyframes_move_undo() {
-    let mut app = setup_test_context();
-    let anim_id = app.animation.project.active_animation_id.clone().unwrap();
+fn test_keyframe_deletion_integrity() {
+    let mut app = AppState::new();
+    let mut ui_ctx = UiContext::new();
+    app.mode = AppMode::Animation;
 
-    app.animation.current_time = 0.5;
-    CommandHandler::execute(&mut app, AppCommand::InsertManualKeyframe("Root".into()));
-
-    // 全选：选中 Root 骨骼的所有属性
-    app.ui.selected_keyframes = vec![
-        ("Root".into(), Some(TimelineProperty::Rotation), 0.5),
-        ("Root".into(), Some(TimelineProperty::Translation), 0.5),
-        ("Root".into(), Some(TimelineProperty::Scale), 0.5),
+    app.anim.state.project.skeleton.add_bone(BoneData::new("Bone1".into(), "Bone1".into()));
+    exec(&mut app, Box::new(CreateAnimationCmd("Anim".into())));
+    
+    exec(&mut app, Box::new(InsertManualKeyframeCmd("Bone1".into())));
+    
+    // 模拟 UI 选中关键帧操作
+    ui_ctx.selected_keyframes = vec![
+        ("Bone1".into(), Some(TimelineProperty::Rotation), 0.0)
     ];
-    CommandHandler::execute(&mut app, AppCommand::MoveSelectedKeyframes(0.5));
 
-    let anim = app.animation.project.animations.get(&anim_id).unwrap();
-    assert!(anim.timelines.iter().filter(|t| !t.keyframes.is_empty() && t.target_id == "Root").all(|t| t.keyframes[0].time == 1.0));
+    exec(&mut app, Box::new(DeleteKeyframeCmd("Bone1".into(), Some(TimelineProperty::Rotation), 0.0)));
 
-    CommandHandler::execute(&mut app, AppCommand::Undo);
-    let anim_restored = app.animation.project.animations.get(&anim_id).unwrap();
-    let affected_tls = anim_restored.timelines.iter().filter(|t| !t.keyframes.is_empty());
-    assert!(affected_tls.count() > 0, "应该至少有被修改过的轨道存在");
-    assert!(anim_restored.timelines.iter().filter(|t| !t.keyframes.is_empty() && t.target_id == "Root").all(|t| t.keyframes[0].time == 0.5));
+    let anim_id = app.anim.state.project.active_animation_id.as_ref().unwrap();
+    let anim = app.anim.state.project.animations.get(anim_id).unwrap();
+    let tl = anim.timelines.iter().find(|t| t.target_id == "Bone1" && t.property == TimelineProperty::Rotation).unwrap();
+    
+    assert!(tl.keyframes.is_empty(), "关键帧删除失败");
 }

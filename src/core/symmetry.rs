@@ -1,3 +1,4 @@
+use std::any::Any;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymmetryMode {
     None,
@@ -5,6 +6,11 @@ pub enum SymmetryMode {
     Vertical,
     Quad,
     Translational,
+}
+pub trait SymmetryProvider: Send + Sync {
+    fn apply_symmetry(&self, x: i32, y: i32, callback: &mut dyn FnMut(i32, i32));
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -28,12 +34,13 @@ impl SymmetryConfig {
             visible_guides: true,
         }
     }
+}
 
-    #[inline]
-    pub fn apply_symmetry<F>(&self, x: i32, y: i32, mut callback: F)
-    where
-        F: FnMut(i32, i32),
-    {
+impl SymmetryProvider for SymmetryConfig {
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn apply_symmetry(&self, x: i32, y: i32, callback: &mut dyn FnMut(i32, i32)) {
         callback(x, y);
 
         match self.mode {
@@ -62,5 +69,14 @@ impl SymmetryConfig {
                 callback(x + self.translation_dx, y + self.translation_dy);
             }
         }
+    }
+}
+impl SymmetryConfig {
+    #[inline]
+    pub fn apply_symmetry_inline<F>(&self, x: i32, y: i32, mut callback: F)
+    where
+        F: FnMut(i32, i32),
+    {
+        self.apply_symmetry(x, y, &mut callback);
     }
 }

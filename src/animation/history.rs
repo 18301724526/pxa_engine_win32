@@ -63,7 +63,10 @@ impl AnimHistory {
                     anim.recalculate_duration();
                 }
             }
-            AnimPatch::Skeleton { old, new } => { project.skeleton = if is_undo { old.clone() } else { new.clone() }; }
+            AnimPatch::Skeleton { old, new } => { 
+                project.skeleton = if is_undo { old.clone() } else { new.clone() }; 
+                project.skeleton.rebuild_internal_state();
+            }
             AnimPatch::SlotBone { slot_id, old_bone, new_bone } => {
                 if let Some(slot) = project.skeleton.slots.iter_mut().find(|s| s.data.id == *slot_id) {
                     slot.data.bone_id = if is_undo { old_bone.clone() } else { new_bone.clone() };

@@ -1,14 +1,13 @@
-#![windows_subsystem = "windows"]
+//#![windows_subsystem = "windows"]
 use pxa_engine_win32::render::compositor::{Compositor, Viewport};
 use pxa_engine_win32::app::state::AppState;
-use pxa_engine_win32::app::commands::AppCommand;
-use pxa_engine_win32::app::command_handler::CommandHandler;
+// 注意：AppCommand 已被具体的结构体取代，CommandHandler 已废弃
 use pxa_engine_win32::ui::gui::Gui;
 use pxa_engine_win32::ui::framework::GuiFramework;
 use pxa_engine_win32::render::anim_compositor::AnimCompositor; 
 use pxa_engine_win32::animation::controller::AnimationController; 
 use pxa_engine_win32::app::state::AppMode; 
-
+use pxa_engine_win32::app::command_handler::AppEvent; // 引入 AppEvent 处理窗口逻辑
 
 use winit::{
     event::{ElementState, Event, MouseButton, WindowEvent},
@@ -53,7 +52,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let window_size = window.inner_size();
     let mut app_state = AppState::new();
-    app_state.view.update_viewport(window_size.width as f32, window_size.height as f32);
+    
+    // 【修正 1】view 现在位于 pixel session 中
+    app_state.pixel.view.update_viewport(window_size.width as f32, window_size.height as f32);
+    
     let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
     let mut pixels = match Pixels::new(window_size.width, window_size.height, surface_texture) {
         Ok(p) => p,
@@ -87,7 +89,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut resize_start_cursor_global = (0.0, 0.0);
     let mut anim_renderer = AnimCompositor::new(pixels.device(), pixels.render_texture_format());
     let mut last_frame_inst = std::time::Instant::now();
-    app_state.engine.update_render_cache(None);
+    
+    // 【修正 2】engine 现在位于 pixel session 中
+    app_state.pixel.engine.update_render_cache(None);
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -177,7 +181,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     WindowEvent::Resized(size) => {
                         let _ = pixels.resize_surface(size.width, size.height);
                         framework.resize(size.width, size.height);
-                        app_state.view.update_viewport(size.width as f32, size.height as f32);
+                        // 【修正 3】路径深度修正
+                        app_state.pixel.view.update_viewport(size.width as f32, size.height as f32);
                     }
                     WindowEvent::KeyboardInput { input, .. } => {
                         if let Some(winit::event::VirtualKeyCode::Space) = input.virtual_keycode {
@@ -189,15 +194,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     window.set_cursor_icon(winit::window::CursorIcon::Default);
                                 }
                             }
-                            } else if let Some(winit::event::VirtualKeyCode::Return) = input.virtual_keycode {
-                                if input.state == ElementState::Pressed {
-                                    app_state.enqueue_command(AppCommand::CommitCurrentTool);
-                                }
-                            } else if let Some(winit::event::VirtualKeyCode::Escape) = input.virtual_keycode {
-                                if input.state == ElementState::Pressed {
-                                    app_state.enqueue_command(AppCommand::CancelCurrentTool);
-                                }
+                        // 【修正 4】改用具体的命令结构体实例化
+                        } else if let Some(winit::event::VirtualKeyCode::Return) = input.virtual_keycode {
+                            if input.state == ElementState::Pressed {
+                                app_state.enqueue_command(Box::new(pxa_engine_win32::app::commands::CommitCurrentToolCmd));
                             }
+                        } else if let Some(winit::event::VirtualKeyCode::Escape) = input.virtual_keycode {
+                            if input.state == ElementState::Pressed {
+                                app_state.enqueue_command(Box::new(pxa_engine_win32::app::commands::CancelCurrentToolCmd));
+                            }
+                        }
                     }
                     WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                         framework.scale_factor(scale_factor as f32);
@@ -207,9 +213,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let dy = (cursor_pos.1 - last_cursor_pos.1) as f32;
                         last_cursor_pos = (position.x, position.y);
                         if app_state.is_space_pressed && is_mouse_down {
-                            let zoom = app_state.view.zoom_level as f32;
-                            app_state.view.pan_x += dx / zoom;
-                            app_state.view.pan_y += dy / zoom;                        
+                            let zoom = app_state.pixel.view.zoom_level as f32;
+                            app_state.pixel.view.pan_x += dx / zoom;
+                            app_state.pixel.view.pan_y += dy / zoom;                        
                         }
                     }
                     WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
@@ -224,50 +230,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let dt = now.duration_since(last_frame_inst);
                 last_frame_inst = now;
 
-                while let Some(cmd) = app_state.pop_command() {
-                    match cmd {
-                        AppCommand::WindowClose => *control_flow = ControlFlow::Exit,
-                        AppCommand::WindowDrag => { let _ = window.drag_window(); },
-                        AppCommand::WindowMinimize => window.set_minimized(true),
-                        AppCommand::WindowMaximize => {
-                            window.set_maximized(!window.is_maximized());
-                        },
-                        _ => CommandHandler::execute(&mut app_state, cmd),
+                // 【核心修正 5】处理命令总线和 AppEvent
+                app_state.process_commands();
+                let events: Vec<AppEvent> = app_state.command_bus.events.drain(..).collect();
+                for ev in events {
+                    match ev {
+                        AppEvent::CloseWindow => { *control_flow = ControlFlow::Exit; return; },
+                        AppEvent::ShowExitModal => framework.gui.ui_ctx.show_exit_modal = true,
+                        AppEvent::ShowError(msg) => framework.gui.ui_ctx.error_message = Some(msg),
+                        AppEvent::DragWindow => { let _ = window.drag_window(); },
+                        AppEvent::MinimizeWindow => window.set_minimized(true),
+                        AppEvent::MaximizeWindow => window.set_maximized(!window.is_maximized()),
                     }
                 }
+
                 framework.prepare(&window);
                 let ctx = framework.egui_ctx.clone();
                 framework.gui.ui(&ctx, &mut app_state);
-                let width = app_state.view.width as u32;
-                let height = app_state.view.height as u32;
+                
+                let width = app_state.pixel.view.width as u32;
+                let height = app_state.pixel.view.height as u32;
 
                 if let Err(e) = pixels.resize_buffer(width, height) {
                     eprintln!("Resize buffer failed: {}", e);
                     *control_flow = ControlFlow::Exit;
                     return;
                 }
+                
                 let viewport = Viewport { 
                     screen_width: width, 
                     screen_height: height,
-                    zoom: app_state.view.zoom_level as f32,
-                    pan_x: app_state.view.pan_x,
-                    pan_y: app_state.view.pan_y,
+                    zoom: app_state.pixel.view.zoom_level as f32,
+                    pan_x: app_state.pixel.view.pan_x,
+                    pan_y: app_state.pixel.view.pan_y,
                 };
 
-                if app_state.view.needs_full_redraw {
-                    app_state.engine.update_render_cache(None);
-                    app_state.view.needs_full_redraw = false;
-                } else if let Some(rect) = app_state.view.dirty_rect.take() {
-                    app_state.engine.update_render_cache(Some(rect));
+                // 【修正 6】渲染缓存更新路径
+                if app_state.pixel.view.needs_full_redraw {
+                    app_state.pixel.engine.update_render_cache(None);
+                    app_state.pixel.view.needs_full_redraw = false;
+                } else if let Some(rect) = app_state.pixel.view.dirty_rect.take() {
+                    app_state.pixel.engine.update_render_cache(Some(rect));
                 }
 
                 match app_state.mode {
                     AppMode::PixelEdit => {
-                        Compositor::render(app_state.engine.store(), pixels.frame_mut(), viewport);
-                        if app_state.engine.tool_manager().active_type == pxa_engine_win32::app::state::ToolType::CreateBone {
-                             AnimCompositor::render_cpu(app_state.engine.store(), &app_state.animation.project.skeleton, pixels.frame_mut(), viewport, app_state.ui.selected_bone_id.as_ref());
+                        Compositor::render(app_state.pixel.engine.store(), pixels.frame_mut(), viewport);
+                        if app_state.pixel.engine.tool_manager().active_type == pxa_engine_win32::app::state::ToolType::CreateBone {
+                             // 【修正 7】骨骼渲染与 UI Context 映射
+                             AnimCompositor::render_cpu(
+                                app_state.pixel.engine.store(), 
+                                &app_state.anim.state.project.skeleton, 
+                                pixels.frame_mut(), 
+                                viewport, 
+                                framework.gui.ui_ctx.selected_bone_id.as_ref()
+                             );
                              
-                             if let Some(tool) = app_state.engine.tool_manager().tools.get(&pxa_engine_win32::app::state::ToolType::CreateBone) {
+                             if let Some(tool) = app_state.pixel.engine.tool_manager().tools.get(&pxa_engine_win32::app::state::ToolType::CreateBone) {
                                  if let Some(bone_tool) = tool.as_any().downcast_ref::<pxa_engine_win32::tools::create_bone::CreateBoneTool>() {
                                      if let (Some(start), Some(end)) = (bone_tool.start_pos, bone_tool.preview_end) {
                                          let mut temp_skel = pxa_engine_win32::core::animation::skeleton::Skeleton::new();
@@ -278,50 +297,137 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                          temp_bone.local_transform.rotation = (end.1 - start.1).atan2(end.0 - start.0).to_degrees();
                                          temp_skel.add_bone(temp_bone);
                                          temp_skel.update();
-                                         AnimCompositor::render_cpu(app_state.engine.store(), &temp_skel, pixels.frame_mut(), viewport, None);
+                                         AnimCompositor::render_cpu(app_state.pixel.engine.store(), &temp_skel, pixels.frame_mut(), viewport, None);
                                      }
                                  }
                              }
                         }
                     }
                     AppMode::Animation => {
-                        AnimationController::update(&mut app_state.animation, dt);
+                        // 【修正 8】动画控制器状态路径
+                        AnimationController::update(&mut app_state.anim.state, dt);
                         app_state.sync_animation_to_layers();
-                        Compositor::render(app_state.engine.store(), pixels.frame_mut(), viewport);
-                        AnimCompositor::render_cpu(app_state.engine.store(), &app_state.animation.project.skeleton, pixels.frame_mut(), viewport, app_state.ui.selected_bone_id.as_ref());
-                        anim_renderer.prepare_textures(pixels.device(), pixels.queue(), app_state.engine.store(), &app_state.animation.project.skeleton);
+                        
+                        let mut hidden_layers = Vec::new();
+                        for slot in &app_state.anim.state.project.skeleton.slots {
+                            if let Some(layer_id) = &slot.current_attachment {
+                                if let Some(layer) = app_state.pixel.engine.parts_mut().0.get_layer_mut(layer_id) {
+                                    if layer.visible {
+                                        layer.visible = false; // 临时对 CPU 隐身
+                                        hidden_layers.push(layer_id.clone());
+                                    }
+                                }
+                            }
+                        }
+                        
+                        app_state.pixel.engine.update_render_cache(None);
+                        Compositor::render(app_state.pixel.engine.store(), pixels.frame_mut(), viewport);
+                        
+                        for id in hidden_layers {
+                            if let Some(layer) = app_state.pixel.engine.parts_mut().0.get_layer_mut(&id) {
+                                layer.visible = true;
+                            }
+                        }
+                        AnimCompositor::render_cpu(
+                            app_state.pixel.engine.store(), 
+                            &app_state.anim.state.project.skeleton, 
+                            pixels.frame_mut(), 
+                            viewport, 
+                            framework.gui.ui_ctx.selected_bone_id.as_ref()
+                        );
+                        let _ = &anim_renderer; // 确保变量被引用
+                        anim_renderer.prepare_textures(
+                            pixels.device(), 
+                            pixels.queue(), 
+                            app_state.pixel.engine.store(), 
+                            &app_state.anim.state.project.skeleton
+                        );
                     }
                 }
 
+                let _ = &last_frame_inst;
                 let render_result = pixels.render_with(|encoder, render_target, context| {
-                    context.scaling_renderer.render(encoder, render_target);
                     if app_state.mode == AppMode::Animation {
                         use pixels::wgpu::util::DeviceExt;
-                        let skeleton = &app_state.animation.project.skeleton;
-                        let store = app_state.engine.store();
+                        let skeleton = &app_state.anim.state.project.skeleton;
+                        let store = app_state.pixel.engine.store();
 
                         let mut instances = Vec::new();
+                        // ... (保留矩阵计算逻辑) ...
+                        let mut setup_matrices = vec![[1.0, 0.0, 0.0, 1.0, 0.0, 0.0]; skeleton.bones.len()];
+                        for i in 0..skeleton.bones.len() {
+                            let bone = &skeleton.bones[i];
+                            let local_matrix = bone.data.local_transform.to_matrix();
+                            let parent_matrix = bone.parent_index.map(|p_idx| setup_matrices[p_idx]);
+                            setup_matrices[i] = match parent_matrix {
+                                None => local_matrix,
+                                Some(pm) => {
+                                    let pa = pm[0]; let pb = pm[1]; let pc = pm[2]; let pd = pm[3]; let px = pm[4]; let py = pm[5];
+                                    let la = local_matrix[0]; let lb = local_matrix[1]; let lc = local_matrix[2]; let ld = local_matrix[3]; let lx = local_matrix[4]; let ly = local_matrix[5];
+                                    [
+                                        pa * la + pc * lb, pb * la + pd * lb,
+                                        pa * lc + pc * ld, pb * lc + pd * ld,
+                                        pa * lx + pc * ly + px, pb * lx + pd * ly + py
+                                    ]
+                                }
+                            };
+                        }
+                        // ... (保留实例构建逻辑，使用修正后的 skeleton 和 store) ...
                         for slot in &skeleton.slots {
                             if let (Some(layer_id), Some(bone_idx)) = (&slot.current_attachment, skeleton.bones.iter().position(|b| b.data.id == slot.data.bone_id)) {
                                 if let Some(layer) = store.get_layer(layer_id) {
-                                    let m = skeleton.bones[bone_idx].world_matrix;
-                                    let final_matrix = [
-                                        [m[0] * layer.width as f32, m[1] * layer.width as f32, 0.0, 0.0],
-                                        [m[2] * layer.height as f32, m[3] * layer.height as f32, 0.0, 0.0],
+                                    let m_curr = skeleton.bones[bone_idx].world_matrix;
+                                    let m_bind = setup_matrices[bone_idx];
+                                    
+                                    let mut final_matrix = [
+                                        [layer.width as f32, 0.0, 0.0, 0.0],
+                                        [0.0, layer.height as f32, 0.0, 0.0],
                                         [0.0, 0.0, 1.0, 0.0],
-                                        [m[4], m[5], 0.0, 1.0],
+                                        [0.0, 0.0, 0.0, 1.0],
                                     ];
+                                    let mut inv_c0 = [1.0, 0.0, 0.0, 0.0];
+                                    let mut inv_c1 = [0.0, 1.0, 0.0, 0.0];
+                                    let mut inv_c2 = [0.0, 0.0, 0.0, 0.0];
+
+                                    let det = m_bind[0] * m_bind[3] - m_bind[1] * m_bind[2];
+                                    if det.abs() > 1e-6 {
+                                        let ox = layer.offset_x as f32;
+                                        let oy = layer.offset_y as f32;
+                                        let inv_b = 1.0 / det;
+                                        let ib_a = m_bind[3] * inv_b; let ib_b = -m_bind[1] * inv_b;
+                                        let ib_c = -m_bind[2] * inv_b; let ib_d = m_bind[0] * inv_b;
+                                        let ib_tx = (m_bind[2]*m_bind[5] - m_bind[3]*m_bind[4]) * inv_b;
+                                        let ib_ty = (m_bind[1]*m_bind[4] - m_bind[0]*m_bind[5]) * inv_b;
+                                        let f_a = m_curr[0]*ib_a + m_curr[2]*ib_b; let f_b = m_curr[1]*ib_a + m_curr[3]*ib_b;
+                                        let f_c = m_curr[0]*ib_c + m_curr[2]*ib_d; let f_d = m_curr[1]*ib_c + m_curr[3]*ib_d;
+                                        let f_tx = m_curr[0]*ib_tx + m_curr[2]*ib_ty + m_curr[4]; let f_ty = m_curr[1]*ib_tx + m_curr[3]*ib_ty + m_curr[5];
+                                        let w = layer.width as f32; let h = layer.height as f32;
+                                        final_matrix = [
+                                            [f_a * w, f_b * w, 0.0, 0.0], [f_c * h, f_d * h, 0.0, 0.0],
+                                            [0.0, 0.0, 1.0, 0.0], [f_a * ox + f_c * oy + f_tx, f_b * ox + f_d * oy + f_ty, 0.0, 1.0],
+                                        ];
+                                        let det_c = m_curr[0] * m_curr[3] - m_curr[1] * m_curr[2];
+                                        let (ic_a, ic_b, ic_c, ic_d, ic_tx, ic_ty) = if det_c.abs() > 1e-6 {
+                                            let inv_c = 1.0 / det_c;
+                                            (m_curr[3] * inv_c, -m_curr[1] * inv_c, -m_curr[2] * inv_c, m_curr[0] * inv_c, (m_curr[2]*m_curr[5] - m_curr[3]*m_curr[4]) * inv_c, (m_curr[1]*m_curr[4] - m_curr[0]*m_curr[5]) * inv_c)
+                                        } else { (1.0, 0.0, 0.0, 1.0, 0.0, 0.0) };
+                                        let bc_a = m_bind[0]*ic_a + m_bind[2]*ic_b; let bc_b = m_bind[1]*ic_a + m_bind[3]*ic_b;
+                                        let bc_c = m_bind[0]*ic_c + m_bind[2]*ic_d; let bc_d = m_bind[1]*ic_c + m_bind[3]*ic_d;
+                                        let bc_tx = m_bind[0]*ic_tx + m_bind[2]*ic_ty + m_bind[4]; let bc_ty = m_bind[1]*ic_tx + m_bind[3]*ic_ty + m_bind[5];
+                                        inv_c0 = [bc_a, bc_b, 0.0, 0.0]; inv_c1 = [bc_c, bc_d, 0.0, 0.0]; inv_c2 = [bc_tx - ox, bc_ty - oy, 0.0, 0.0];
+                                    }
                                     let c = slot.current_color;
                                     let color_f32 = [c.r as f32 / 255.0, c.g as f32 / 255.0, c.b as f32 / 255.0, c.a as f32 / 255.0];
-                                    
-                                    let mut instance_data = Vec::with_capacity(80);
-                                    instance_data.extend_from_slice(bytemuck::cast_slice(&final_matrix));
-                                    instance_data.extend_from_slice(bytemuck::cast_slice(&color_f32));
-
+                                    let size_vec = [layer.width as f32, layer.height as f32];
+                                    let mut instance_data = Vec::with_capacity(136);
+                                    instance_data.extend_from_slice(bytemuck::cast_slice(&[final_matrix]));
+                                    instance_data.extend_from_slice(bytemuck::cast_slice(&[color_f32]));
+                                    instance_data.extend_from_slice(bytemuck::cast_slice(&[inv_c0]));
+                                    instance_data.extend_from_slice(bytemuck::cast_slice(&[inv_c1]));
+                                    instance_data.extend_from_slice(bytemuck::cast_slice(&[inv_c2]));
+                                    instance_data.extend_from_slice(bytemuck::cast_slice(&[size_vec]));
                                     instances.push(context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                                        label: None,
-                                        contents: &instance_data,
-                                        usage: wgpu::BufferUsages::VERTEX,
+                                        label: None, contents: &instance_data, usage: wgpu::BufferUsages::VERTEX,
                                     }));
                                 }
                             }
@@ -330,15 +436,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             label: Some("anim_gpu_pass"),
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: render_target,
-                                resolve_target: None,
+                                view: render_target, resolve_target: None,
                                 ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: true },
                             })],
                             depth_stencil_attachment: None,
                         });
                         
-                        anim_renderer.render_gpu(&context.queue, &mut rpass, store, skeleton, viewport, app_state.ui.selected_bone_id.as_ref(), &instances);
+                        // 【修正 9】GPU 渲染传参修正
+                        anim_renderer.render_gpu(
+                            &context.queue, 
+                            &mut rpass, 
+                            store, 
+                            skeleton, 
+                            viewport, 
+                            framework.gui.ui_ctx.selected_bone_id.as_ref(), 
+                            &instances
+                        );
                     }
+                    context.scaling_renderer.render(encoder, render_target);
                     framework.render(encoder, render_target, context);
                     Ok(())
                 });
