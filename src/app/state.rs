@@ -1,6 +1,5 @@
 use crate::app::io_service::IoService;
 use crate::app::engine::PxaEngine;
-use crate::history::patch::ActionPatch;
 use crate::app::events::InputEvent;
 use crate::app::command_handler::{CommandBus, Command};
 use crate::app::shortcut_manager::ShortcutManager;
@@ -28,11 +27,12 @@ pub struct AppState {
     pub pixel: PixelEditSession,
     pub anim: AnimationSession,
     pub is_space_pressed: bool,
-    pub last_mouse_pos: Option<(u32, u32)>,
+    pub last_mouse_pos: Option<(i32, i32)>,
     pub is_dirty: bool,
     pub mode: AppMode,
     pub shortcuts: ShortcutManager,
     pub command_bus: CommandBus,
+    pub pending_import_image: Option<image::DynamicImage>,
 }
 
 impl AppState {
@@ -55,6 +55,7 @@ impl AppState {
             mode: AppMode::PixelEdit,
             shortcuts: ShortcutManager::new(),
             command_bus: CommandBus::new(),
+            pending_import_image: None,
         };
         let w = state.pixel.engine.store().canvas_width as f32;
         let h = state.pixel.engine.store().canvas_height as f32;
@@ -89,6 +90,7 @@ impl AppState {
     pub fn process_commands(&mut self) {
         let mut bus = std::mem::replace(&mut self.command_bus, CommandBus::new());
         bus.process_all(self);
+        bus.append_from(&mut self.command_bus);
         self.command_bus = bus;
     }
 
@@ -109,11 +111,11 @@ impl AppState {
         crate::app::input_handler::InputHandler::handle_engine_effect(self, effect);
     }
 
-    pub fn on_mouse_down(&mut self, x: u32, y: u32) -> Result<(), CoreError> {
+    pub fn on_mouse_down(&mut self, x: i32, y: i32) -> Result<(), CoreError> {
         crate::app::input_handler::InputHandler::on_mouse_down(self, x, y)
     }
 
-    pub fn on_mouse_move(&mut self, x: u32, y: u32) -> Result<(), CoreError> {
+    pub fn on_mouse_move(&mut self, x: i32, y: i32) -> Result<(), CoreError> {
         crate::app::input_handler::InputHandler::on_mouse_move(self, x, y)
     }
 
@@ -181,27 +183,20 @@ impl AppState {
 
     pub fn import_image(&mut self) {
         if let Some(path) = IoService::pick_import_path() {
-            let id = format!("layer_imp_{}", self.pixel.engine.id_gen().generate());
-            let name = t!("layer.import_name", num = self.pixel.engine.store().layers.len() + 1).to_string();
-            let w = self.pixel.engine.store().canvas_width;
-            let h = self.pixel.engine.store().canvas_height;
-            let old_active_id = self.pixel.engine.store().active_layer_id.clone();
-            
-            match IoService::load_as_layer(path, w, h, id.clone(), name) {
-                Ok(layer) => {
-                    let index = self.pixel.engine.store().layers.len();
-                    let patch = ActionPatch::new_layer_add(format!("patch_{}", id), id.clone(), layer, index, old_active_id);
-                    if let Err(e) = self.pixel.engine.commit_patch(patch) {
-                        self.command_bus.events.push_back(crate::app::command_handler::AppEvent::ShowError(e.to_string()));
-                    } else {
-                        self.pixel.engine.set_active_layer(id);
-                        self.is_dirty = true;
-                        self.pixel.view.needs_full_redraw = true;
-                    }
+            match image::open(&path) {
+                Ok(img) => {
+                    self.pending_import_image = Some(img);
+                },
+                Err(e) => {
+                    self.command_bus.events.push_back(crate::app::command_handler::AppEvent::ShowError(format!("图片解析失败: {}", e)));
                 }
-                Err(e) => self.command_bus.events.push_back(crate::app::command_handler::AppEvent::ShowError(t!("error.import_image_failed", err = e.to_string()).to_string())),
             }
         }
+    }
+
+    pub fn commit_image_import(&mut self) {
+        // 我们不需要在这里实现，直接让它变成一个空壳方法。
+        // 因为真正的拦截和提交逻辑，我已经写在 gui.rs 里了。
     }
 
     pub fn export_to_png(&mut self) {

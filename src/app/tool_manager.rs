@@ -46,7 +46,7 @@ impl ToolManager {
         self.active_type = tool_type;
     }
 
-    pub fn handle_pointer_down(&mut self, x: u32, y: u32, store: &mut PixelStore, symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    pub fn handle_pointer_down(&mut self, x: i32, y: i32, store: &mut PixelStore, symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         self.is_drawing = true;
         if let Some(tool) = self.tools.get_mut(&self.active_type) {
             tool.on_pointer_down(x, y, store, symmetry)?;
@@ -54,7 +54,7 @@ impl ToolManager {
         Ok(())
     }
 
-    pub fn handle_pointer_move(&mut self, x: u32, y: u32, store: &mut PixelStore, symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    pub fn handle_pointer_move(&mut self, x: i32, y: i32, store: &mut PixelStore, symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         if !self.is_drawing { return Ok(()); }
         if let Some(tool) = self.tools.get_mut(&self.active_type) {
             tool.on_pointer_move(x, y, store, symmetry)?;

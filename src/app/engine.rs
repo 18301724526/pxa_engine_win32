@@ -248,7 +248,7 @@ impl PxaEngine {
             } else {
                 let s = self.store.as_any_mut().downcast_mut::<PixelStore>().unwrap();
                 Compositor::update_composite_cache(s, Some(rect));
-                EngineEffect::RedrawRect(rect.0, rect.1, rect.2, rect.3)
+                EngineEffect::RedrawRect(rect.0 as i32, rect.1 as i32, rect.2, rect.3)
             }
         } else {
             EngineEffect::None

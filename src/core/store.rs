@@ -109,7 +109,7 @@ impl PixelStore {
         let local_x = canvas_x as i32 - layer.offset_x;
         let local_y = canvas_y as i32 - layer.offset_y;
         if local_x < 0 || local_y < 0 || local_x >= layer.width as i32 || local_y >= layer.height as i32 {
-            return Err(CoreError::OutOfBounds { x: canvas_x, y: canvas_y });
+            return Ok(());
         }
         layer.set_pixel(local_x as u32, local_y as u32, color)
     }

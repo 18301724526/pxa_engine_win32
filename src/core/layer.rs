@@ -99,7 +99,7 @@ impl Layer {
 
     pub fn set_pixel_raw(&mut self, x: u32, y: u32, color: Color) -> Result<()> {
         if x >= self.width || y >= self.height {
-            return Err(CoreError::OutOfBounds { x, y });
+            return Err(CoreError::OutOfBounds { x: x as i32, y: y as i32 });
         }
         
         let cx = x / CHUNK_SIZE;

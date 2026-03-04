@@ -12,3 +12,4 @@ pub mod timeline;
 pub mod toolbar_pixel;
 pub mod toolbar_anim;
 pub mod bone_transform_panel;
+pub mod import_modal;

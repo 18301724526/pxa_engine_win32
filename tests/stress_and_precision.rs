@@ -59,12 +59,12 @@ fn test_chaos_stress_fuzz() {
             1 | 2 => {
                 let x = (next_rand() % 128) as u32;
                 let y = (next_rand() % 128) as u32;
-                let _ = app.on_mouse_down(x, y);
+                let _ = app.on_mouse_down(x as i32, y as i32);
             }
             3 => {
                 let x = (next_rand() % 128) as u32;
                 let y = (next_rand() % 128) as u32;
-                let _ = app.on_mouse_move(x, y);
+                let _ = app.on_mouse_move(x as i32, y as i32);
             }
             4 => {
                 let _ = app.on_mouse_up();

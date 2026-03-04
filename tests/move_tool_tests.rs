@@ -54,6 +54,7 @@ fn test_move_selection_content() {
     assert!(sel.contains(30, 10));
 
     app.undo();
+    app.process_commands();
     assert_eq!(app.pixel.engine.store().get_pixel(&layer_id, 10, 10).unwrap().r, 255);
     assert_eq!(app.pixel.engine.store().get_pixel(&layer_id, 30, 10).unwrap().a, 0);
     assert!(app.pixel.engine.store().selection.contains(10, 10));

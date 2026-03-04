@@ -16,8 +16,8 @@ fn exec(app: &mut AppState, cmd: Box<dyn pxa_engine_win32::app::command_handler:
 
 fn simulate_create_bone(app: &mut AppState, start: (u32, u32), end: (u32, u32)) {
     app.set_tool(ToolType::CreateBone);
-    app.on_mouse_down(start.0, start.1).unwrap();
-    app.on_mouse_move(end.0, end.1).unwrap();
+    app.on_mouse_down(start.0 as i32, start.1 as i32).unwrap();
+    app.on_mouse_move(end.0 as i32, end.1 as i32).unwrap();
     app.on_mouse_up().unwrap();
     app.process_commands();
 }
@@ -133,13 +133,13 @@ fn test_bone_selection_logic() {
     app.anim.state.project.skeleton.add_bone(b1);
     app.anim.state.project.skeleton.update();
 
-    app.on_mouse_down(400, 300).unwrap();
-    assert_eq!(app.anim.selected_bone_id, Some("B1".into()));
+    app.on_mouse_down(736, 536).unwrap();
+    assert_eq!(app.anim.selected_bone_id, Some("B1".into()), "点击屏幕 (736, 536) 应选中 B1");
 
-    app.on_mouse_down(64, 64).unwrap();
-    assert_eq!(app.anim.selected_bone_id, Some("root".into()), "点击中心点应选中 root 骨骼");
+    app.on_mouse_down(400, 300).unwrap();
+    assert_eq!(app.anim.selected_bone_id, Some("root".into()), "点击屏幕中心应选中 root 骨骼");
     
-    app.on_mouse_down(800, 600).unwrap();
+    app.on_mouse_down(10, 10).unwrap();
     assert!(app.anim.selected_bone_id.is_none());
 }
 

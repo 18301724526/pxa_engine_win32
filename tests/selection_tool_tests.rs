@@ -9,11 +9,9 @@ fn exec(app: &mut AppState, cmd: Box<dyn pxa_engine_win32::app::command_handler:
 
 fn setup_selection_test() -> AppState {
     let mut app = AppState::new();
-    {
-        let (store, _, _, _) = app.pixel.engine.parts_mut();
-        store.canvas_width = 100;
-        store.canvas_height = 100;
-    }
+    app.pixel.view.update_viewport(100.0, 100.0);
+    app.enqueue_command(Box::new(pxa_engine_win32::app::commands::ResizeCanvasCmd(100, 100, pxa_engine_win32::app::commands::ResizeAnchor::Center)));
+    app.process_commands();
     app
 }
 
@@ -128,5 +126,6 @@ fn test_selection_stroke_thickness_and_undo() {
     assert_eq!(store.get_pixel(&layer_id, 15, 15).unwrap().a, 0, "内部中心必须是透明的");
 
     app.undo();
+    app.process_commands();
     assert_eq!(app.pixel.engine.store().get_pixel(&layer_id, 10, 10).unwrap().a, 0, "撤销后应恢复透明");
 }

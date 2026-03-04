@@ -24,7 +24,7 @@ impl BucketTool {
 }
 
 impl Tool for BucketTool {
-    fn on_pointer_down(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_down(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         self.backup_chunks.clear();
         self.active_layer_id = None;
         self.dirty_rect = None;
@@ -33,9 +33,9 @@ impl Tool for BucketTool {
             Some(id) => id.clone(), None => return Ok(()),
         };
         self.active_layer_id = Some(layer_id.clone());
-        if !store.selection.contains(x, y) { return Ok(()); }
+        if x < 0 || y < 0 || !store.selection.contains(x as u32, y as u32) { return Ok(()); }
 
-        let target_color = store.get_pixel(&layer_id, x, y).unwrap_or(Color::transparent());
+        let target_color = store.get_pixel(&layer_id, x as u32, y as u32).unwrap_or(Color::transparent());
         let fill_color = store.primary_color;
         if target_color == fill_color { return Ok(()); }
 
@@ -48,8 +48,8 @@ impl Tool for BucketTool {
         let height = layer.height as i32;
         let offset_x = layer.offset_x;
         let offset_y = layer.offset_y;
-        let start_x = x as i32 - offset_x;
-        let start_y = y as i32 - offset_y;
+        let start_x = x - offset_x;
+        let start_y = y - offset_y;
 
         if start_x < 0 || start_x >= width || start_y < 0 || start_y >= height { return Ok(()); }
 
@@ -105,7 +105,7 @@ impl Tool for BucketTool {
         Ok(())
     }
 
-    fn on_pointer_move(&mut self, _x: u32, _y: u32, _store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> { Ok(()) }
+    fn on_pointer_move(&mut self, _x: i32, _y: i32, _store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> { Ok(()) }
 
     fn on_pointer_up(&mut self, store: &mut PixelStore, id_gen: &dyn crate::core::id::IdGenerator) -> Result<Option<ActionPatch>, CoreError> {
         let layer_id = match self.active_layer_id.take() { Some(id) => id, None => return Ok(None) };
@@ -227,6 +227,7 @@ impl<'a> SafeFillContext<'a> {
 
     #[inline(always)]
     fn get_pixel_u32(&self, x: i32, y: i32) -> u32 {
+        if x < 0 || y < 0 || x >= self.layer.width as i32 || y >= self.layer.height as i32 { return 0; }
         let cx = (x as u32) / CHUNK_SIZE;
         let cy = (y as u32) / CHUNK_SIZE;
         
@@ -243,6 +244,9 @@ impl<'a> SafeFillContext<'a> {
 
     #[inline(always)]
     fn is_fillable(&self, x: i32, y: i32, target_u32: u32, has_selection: bool) -> bool {
+        if x < 0 || y < 0 || x >= self.layer.width as i32 || y >= self.layer.height as i32 {
+            return false;
+        }
         let canvas_x = x + self.layer.offset_x;
         let canvas_y = y + self.layer.offset_y;
 
@@ -250,8 +254,13 @@ impl<'a> SafeFillContext<'a> {
             return false; 
         }
 
-        if has_selection && unsafe { !*self.selection.mask.get_unchecked((canvas_y as u32 * self.selection.width + canvas_x as u32) as usize) } {
-            return false;
+        if has_selection {
+            let ux = canvas_x as u32;
+            let uy = canvas_y as u32;
+            let idx = (uy * self.selection.width + ux) as usize;
+            if idx >= self.selection.mask.len() || !self.selection.mask[idx] {
+                return false;
+            }
         }
         
         self.get_pixel_u32(x, y) == target_u32
@@ -259,14 +268,10 @@ impl<'a> SafeFillContext<'a> {
 
     #[inline(always)]
     fn set_pixel_u32(&mut self, x: i32, y: i32, fill_u32: u32) {
+        if x < 0 || y < 0 || x >= self.layer.width as i32 || y >= self.layer.height as i32 { return; }
         let cx = (x as u32) / CHUNK_SIZE;
         let cy = (y as u32) / CHUNK_SIZE;
         let k = (cx, cy);
-
-        let alpha = (fill_u32 >> 24) & 0xFF;
-        if alpha == 0 && !self.layer.chunks.contains_key(&k) {
-             return;
-        }
 
         if !self.backups.contains_key(&k) {
             if let Some(existing) = self.layer.chunks.get(&k) {

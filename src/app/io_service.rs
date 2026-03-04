@@ -55,10 +55,9 @@ impl IoService {
 
     pub fn load_as_layer(path: PathBuf, target_width: u32, target_height: u32, id: String, name: String) -> Result<Layer> {
         let img = image::open(path)?;
-        let resized = img.resize_exact(target_width, target_height, image::imageops::FilterType::Nearest);
-        let rgba = resized.to_rgba8();
+        let pixelized_data = crate::core::pixelizer::PixelizerPipeline::process_image(&img, &crate::core::pixelizer::config::PixelizeConfig { target_w: target_width, target_h: target_height, ..Default::default() });
         let mut layer = Layer::new(id, name, target_width, target_height);
-        layer.set_rect_data(0, 0, target_width, target_height, &rgba.into_vec());
+        layer.set_rect_data(0, 0, target_width, target_height, &pixelized_data);
         Ok(layer)
     }
 

@@ -28,6 +28,7 @@ fn test_pencil_tool_workflow() {
     assert_eq!(app.pixel.engine.history().undo_stack.len(), 1);
 
     app.undo();
+    process_app_logic(&mut app);
     assert_eq!(app.pixel.engine.store().get_pixel(layer_id, 11, 10).unwrap().a, 0);
 }
 
@@ -151,8 +152,8 @@ fn test_out_of_bounds_drag_and_zoom() {
     
     app.on_mouse_down(10, 10).unwrap();
 
-    let out_x = (-100i32) as u32;
-    let out_y = (-100i32) as u32;
+    let out_x = -100i32;
+    let out_y = -100i32;
     
     app.on_mouse_move(out_x, out_y).unwrap();
     app.on_mouse_up().unwrap();

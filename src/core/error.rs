@@ -3,7 +3,7 @@ use rust_i18n::t;
 #[derive(Debug, Clone)]
 pub enum CoreError {
     LayerLocked,
-    OutOfBounds { x: u32, y: u32 },
+    OutOfBounds { x: i32, y: i32 },
     LayerNotFound(String),
     BoneNotFound(String),
 }

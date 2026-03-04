@@ -132,18 +132,18 @@ impl PencilTool {
 }
 
 impl Tool for PencilTool {
-    fn on_pointer_down(&mut self, x: u32, y: u32, store: &mut PixelStore, symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_down(&mut self, x: i32, y: i32, store: &mut PixelStore, symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         if let Some(id) = &store.active_layer_id {
             self.active_layer_id = Some(id.clone());
             self.original_pixels.clear();
             self.dirty_rect = None;
-            self.last_pos = Some((x as i32, y as i32));
-            self.paint_brush_at(x as i32, y as i32, store, symmetry)?;
+            self.last_pos = Some((x, y));
+            self.paint_brush_at(x, y, store, symmetry)?;
         }
         Ok(())
     }
 
-    fn on_pointer_move(&mut self, x: u32, y: u32, store: &mut PixelStore, symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_move(&mut self, x: i32, y: i32, store: &mut PixelStore, symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         if self.active_layer_id.is_none() { return Ok(()); }
 
         if let Some((last_x, last_y)) = self.last_pos {

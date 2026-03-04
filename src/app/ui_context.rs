@@ -1,4 +1,5 @@
 use crate::app::commands::ResizeAnchor;
+use crate::ui::import_modal::state::ImportModalState;
 
 pub struct UiContext {
     pub renaming_layer_id: Option<String>,
@@ -40,6 +41,7 @@ pub struct UiContext {
     pub is_offset_mode_active: bool,
     pub expanded_bones: std::collections::HashSet<String>,
     pub drag_target_bone_id: Option<String>,
+    pub import_modal: ImportModalState,
 }
 
 impl UiContext {
@@ -88,6 +90,7 @@ impl UiContext {
             is_offset_mode_active: false,
             expanded_bones: std::collections::HashSet::new(),
             drag_target_bone_id: None,
+            import_modal: ImportModalState::new(),
         }
     }
 }

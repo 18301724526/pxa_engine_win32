@@ -204,6 +204,11 @@ impl TransformTool {
         let end_x = out_max_x.ceil() as i32; let end_y = out_max_y.ceil() as i32;
         let canvas_w = store.canvas_width; let canvas_h = store.canvas_height;
 
+        let start_x = start_x.clamp(0, canvas_w as i32);
+        let end_x = end_x.clamp(0, canvas_w as i32);
+        let start_y = start_y.clamp(0, canvas_h as i32);
+        let end_y = end_y.clamp(0, canvas_h as i32);
+
         if let Some(layer) = store.get_layer_mut(&layer_id) {
             for &k in &self.preview_chunks {
                 if let Some(erased) = self.erased_chunks.get(&k) {
@@ -279,7 +284,7 @@ impl TransformTool {
 }
 
 impl Tool for TransformTool {
-    fn on_pointer_down(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_down(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         let layer_id = match &store.active_layer_id { Some(id) => id.clone(), None => return Ok(()) };
         if !self.is_active { self.extract_pixels(store, &layer_id)?; }
         
@@ -329,7 +334,7 @@ impl Tool for TransformTool {
             }
 
             self.drag_mode = hit_mode;
-            self.start_pos = Some((x as i32, y as i32));
+            self.start_pos = Some((x, y));
 
             self.base_scale_x = self.scale_x;
             self.base_scale_y = self.scale_y;
@@ -339,7 +344,7 @@ impl Tool for TransformTool {
         Ok(())
     }
 
-    fn on_pointer_move(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_move(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         if !self.is_active || self.drag_mode == DragMode::None { return Ok(()); }
         if let Some((sx, sy)) = self.start_pos {
             let cx = x as f32; let cy = y as f32;
@@ -349,7 +354,7 @@ impl Tool for TransformTool {
                 DragMode::Move => {
                     self.offset_x += cx - st_x;
                     self.offset_y += cy - st_y;
-                    self.start_pos = Some((x as i32, y as i32));
+                    self.start_pos = Some((x, y));
                 }
                 DragMode::Rotate => {
                     let current_angle = (cy - (self.pivot_y + self.offset_y)).atan2(cx - (self.pivot_x + self.offset_x));
@@ -368,8 +373,8 @@ impl Tool for TransformTool {
                         let local_dx = dx * cos_t + dy * sin_t;
                         let local_dy = -dx * sin_t + dy * cos_t;
                         
-                        if dir_x != 0.0 { self.scale_x = self.base_scale_x + (local_dx * dir_x) / hw; }
-                        if dir_y != 0.0 { self.scale_y = self.base_scale_y + (local_dy * dir_y) / hh; }
+                        if dir_x != 0.0 { self.scale_x = (self.base_scale_x + (local_dx * dir_x) / hw).clamp(-100.0, 100.0); }
+                        if dir_y != 0.0 { self.scale_y = (self.base_scale_y + (local_dy * dir_y) / hh).clamp(-100.0, 100.0); }
                     }
                 }
                 _ => {}
@@ -466,4 +471,36 @@ impl Tool for TransformTool {
     
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
+#[cfg(test)]
+mod transform_debug_tests {
+    use super::*;
+    use crate::core::store::PixelStore;
+    use crate::core::symmetry::SymmetryConfig;
+    use crate::core::color::Color;
+
+    #[test]
+    fn test_repro_transform_panic() {
+        let mut store = PixelStore::new(128, 128);
+        let layer_id = "test_layer".to_string();
+        let mut layer = crate::core::layer::Layer::new(layer_id.clone(), "Layer".into(), 128, 128);
+        layer.set_pixel(0, 0, Color::new(255, 0, 0, 255)).unwrap();
+        store.add_layer(layer);
+        store.active_layer_id = Some(layer_id);
+
+        let mut tool = TransformTool::new();
+        let sym = SymmetryConfig::new(128, 128);
+
+        tool.on_pointer_down(64, 64, &mut store, &sym).unwrap();
+        
+        tool.on_pointer_down(128, 128, &mut store, &sym).unwrap();
+        
+        println!("正在模拟平滑移动...");
+        let result = tool.on_pointer_move(200, 200, &mut store, &sym);
+        assert!(result.is_ok(), "工具在处理大坐标时崩溃了！");
+
+        println!("当前的缩放倍数: scale_x = {}", tool.scale_x);
+        assert!((tool.scale_x - 2.125).abs() < 0.001, "缩放数值计算错误：{}", tool.scale_x);
+    }
 }

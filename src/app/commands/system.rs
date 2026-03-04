@@ -1,6 +1,5 @@
 use crate::app::command_handler::{Command, AppEvent};
 use crate::app::state::{AppState, AppMode};
-use crate::animation::history::AnimPatch;
 use std::collections::VecDeque;
 
 pub struct UndoCmd;
@@ -23,7 +22,7 @@ impl Command for UndoCmd {
         if changed {
             state.is_dirty = true;
             state.pixel.view.needs_full_redraw = true;
-            state.sync_animation_to_layers();
+            crate::animation::controller::AnimationController::apply_current_pose(&mut state.anim.state);
             state.sync_animation_to_layers();
         }
         Ok(())

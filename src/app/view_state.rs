@@ -6,7 +6,7 @@ pub struct ViewState {
     pub pan_x: f32,
     pub pan_y: f32,
     pub zoom_level: f64,
-    pub dirty_rect: Option<(u32, u32, u32, u32)>,
+    pub dirty_rect: Option<(i32, i32, u32, u32)>,
     pub needs_full_redraw: bool,
 }
 
@@ -26,6 +26,18 @@ impl ViewState {
     pub fn update_viewport(&mut self, width: f32, height: f32) {
         self.width = width;
         self.height = height;
+    }
+
+    pub fn screen_to_canvas_raw(&self, store: &PixelStore, screen_x: f32, screen_y: f32) -> (f32, f32) {
+        let zoom = self.zoom_level as f32;
+        if self.width <= 1.0 {
+            return (screen_x / zoom - (store.canvas_width as f32 / 2.0), screen_y / zoom - (store.canvas_height as f32 / 2.0));
+        }
+        let screen_cx = self.width / 2.0;
+        let screen_cy = self.height / 2.0;
+        let canvas_cx = store.canvas_width as f32 / 2.0;
+        let canvas_cy = store.canvas_height as f32 / 2.0;
+        ((screen_x - screen_cx) / zoom + canvas_cx - self.pan_x, (screen_y - screen_cy) / zoom + canvas_cy - self.pan_y)
     }
 
     pub fn screen_to_canvas(&self, store: &PixelStore, screen_x: f32, screen_y: f32) -> Option<(u32, u32)> {
@@ -75,10 +87,10 @@ impl ViewState {
         let w = (max_x - min_x) + radius * 2;
         let h = (max_y - min_y) + radius * 2;
 
-        self.union_dirty_rect(x, y, w, h);
+        self.union_dirty_rect(x as i32, y as i32, w, h);
     }
 
-    pub fn mark_dirty_canvas_rect(&mut self, store: &PixelStore, x: u32, y: u32, w: u32, h: u32) {
+    pub fn mark_dirty_canvas_rect(&mut self, store: &PixelStore, x: i32, y: i32, w: u32, h: u32) {
         let zoom = self.zoom_level as f32;
         let s_cx = self.width / 2.0;
         let s_cy = self.height / 2.0;
@@ -90,26 +102,26 @@ impl ViewState {
 
         let sx1 = to_screen_x(x as f32);
         let sy1 = to_screen_y(y as f32);
-        let sx2 = to_screen_x((x + w) as f32);
-        let sy2 = to_screen_y((y + h) as f32);
+        let sx2 = to_screen_x((x + w as i32) as f32);
+        let sy2 = to_screen_y((y + h as i32) as f32);
 
         let rx = sx1.min(sx2).floor() as u32;
         let ry = sy1.min(sy2).floor() as u32;
         let rw = (sx1.max(sx2) - sx1.min(sx2)).ceil() as u32;
         let rh = (sy1.max(sy2) - sy1.min(sy2)).ceil() as u32;
 
-        self.union_dirty_rect(rx, ry, rw, rh);
+        self.union_dirty_rect(rx as i32, ry as i32, rw, rh);
     }
 
-    fn union_dirty_rect(&mut self, x: u32, y: u32, w: u32, h: u32) {
+    fn union_dirty_rect(&mut self, x: i32, y: i32, w: u32, h: u32) {
         match self.dirty_rect {
             None => self.dirty_rect = Some((x, y, w, h)),
             Some((ox, oy, ow, oh)) => {
                 let min_x = ox.min(x);
                 let min_y = oy.min(y);
-                let max_x = (ox + ow).max(x + w);
-                let max_y = (oy + oh).max(y + h);
-                self.dirty_rect = Some((min_x, min_y, max_x - min_x, max_y - min_y));
+                let max_x = (ox + ow as i32).max(x + w as i32);
+                let max_y = (oy + oh as i32).max(y + h as i32);
+                self.dirty_rect = Some((min_x, min_y, (max_x - min_x) as u32, (max_y - min_y) as u32));
             }
         }
     }

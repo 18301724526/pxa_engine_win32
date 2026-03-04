@@ -9,15 +9,9 @@ fn exec(app: &mut AppState, cmd: Box<dyn pxa_engine_win32::app::command_handler:
 
 fn setup_transform_test() -> AppState {
     let mut app = AppState::new();
-    let (store, _, _, _) = app.pixel.engine.parts_mut();
-    store.canvas_width = 100;
-    store.canvas_height = 100;
-    
-    let layer_id = store.active_layer_id.clone().unwrap();
-    if let Some(layer) = store.get_layer_mut(&layer_id) {
-        layer.width = 100;
-        layer.height = 100;
-    }
+    app.pixel.view.update_viewport(100.0, 100.0);
+    app.enqueue_command(Box::new(pxa_engine_win32::app::commands::ResizeCanvasCmd(100, 100, pxa_engine_win32::app::commands::ResizeAnchor::Center)));
+    app.process_commands();
     app.pixel.engine.set_primary_color(Color::new(255, 0, 0, 255));
 
     app.set_tool(ToolType::RectSelect);
@@ -67,6 +61,7 @@ fn test_transform_scale_and_mirror() {
 
     exec(&mut app, Box::new(CommitCurrentToolCmd));
     app.undo();
+    app.process_commands();
     
     let store = app.pixel.engine.store();
     assert_eq!(store.get_pixel(&layer_id, 45, 45).unwrap().r, 255);
@@ -88,4 +83,67 @@ fn test_transform_selection_update_and_cancel() {
     assert_eq!(store.get_pixel(&layer_id, 70, 70).unwrap().a, 0);
     assert_eq!(store.get_pixel(&layer_id, 50, 50).unwrap().r, 255);
     assert!(store.selection.contains(50, 50));
+}
+
+#[test]
+fn test_nuclear_stress_transform_full_canvas_sampling() {
+    let mut app = AppState::new();
+    app.pixel.view.update_viewport(100.0, 100.0);
+    exec(&mut app, Box::new(ResizeCanvasCmd(100, 100, ResizeAnchor::TopLeft)));
+    let layer_id = app.pixel.engine.store().active_layer_id.clone().unwrap();
+
+    app.pixel.engine.set_primary_color(Color::new(255, 0, 0, 255));
+    app.set_tool(ToolType::RectSelect);
+    app.on_mouse_down(0, 0).unwrap();
+    app.on_mouse_move(100, 100).unwrap();
+    app.on_mouse_up().unwrap();
+    app.set_tool(ToolType::Bucket);
+    app.on_mouse_down(50, 50).unwrap();
+    app.on_mouse_up().unwrap();
+
+    app.set_tool(ToolType::Transform);
+    app.on_mouse_down(100, 100).unwrap();
+
+    for i in 100..300 {
+        app.on_mouse_move(i as i32, i as i32).unwrap();
+
+        app.pixel.engine.update_render_cache(None);
+        let store = app.pixel.engine.store();
+
+        for y in 0..100 {
+            for x in 0..100 {
+                let _ = store.get_composite_pixel(x, y);
+            }
+        }
+    }
+
+    exec(&mut app, Box::new(CommitCurrentToolCmd));
+    
+    let final_store = app.pixel.engine.store();
+    let pixel = final_store.get_pixel(&layer_id, 50, 50).expect("图层消失了！");
+    assert_eq!(pixel.r, 255, "数据损坏：填充的红色丢失");
+}
+
+fn setup_full_red_128_repro() -> AppState {
+    let mut app = AppState::new();
+    app.pixel.view.update_viewport(128.0, 128.0);
+    exec(&mut app, Box::new(ResizeCanvasCmd(128, 128, ResizeAnchor::TopLeft)));
+    app.pixel.engine.set_primary_color(Color::new(255, 0, 0, 255));
+    app.set_tool(ToolType::RectSelect);
+    app.on_mouse_down(0, 0).unwrap(); app.on_mouse_move(128, 128).unwrap(); app.on_mouse_up().unwrap();
+    app.set_tool(ToolType::Bucket);
+    app.on_mouse_down(64, 64).unwrap(); app.on_mouse_up().unwrap();
+    app.set_tool(ToolType::Transform);
+    app
+}
+
+#[test]
+fn test_repro_the_one_pixel_edge_crash_final() {
+    let mut app = setup_full_red_128_repro();
+
+    app.on_mouse_down(128, 128).unwrap();
+    app.on_mouse_move(129, 129).unwrap();
+
+    app.pixel.engine.update_render_cache(None);
+    let _ = app.pixel.engine.store().get_composite_pixel(128, 128); 
 }

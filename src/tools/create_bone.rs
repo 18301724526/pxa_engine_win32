@@ -22,13 +22,13 @@ impl CreateBoneTool {
 }
 
 impl Tool for CreateBoneTool {
-    fn on_pointer_down(&mut self, x: u32, y: u32, _store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_down(&mut self, x: i32, y: i32, _store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         self.start_pos = Some((x as f32, y as f32));
         self.preview_end = Some((x as f32, y as f32));
         Ok(())
     }
 
-    fn on_pointer_move(&mut self, x: u32, y: u32, _store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_move(&mut self, x: i32, y: i32, _store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         if self.start_pos.is_some() {
             self.preview_end = Some((x as f32, y as f32));
         }

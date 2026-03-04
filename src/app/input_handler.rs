@@ -6,16 +6,20 @@ use crate::animation::history::AnimPatch;
 pub struct InputHandler;
 
 impl InputHandler {
-    pub fn on_mouse_down(app: &mut AppState, x: u32, y: u32) -> Result<(), CoreError> {
-        let (cx, cy) = app.pixel.view.screen_to_canvas(app.pixel.engine.store(), x as f32, y as f32)
-            .unwrap_or((x, y));
+    pub fn on_mouse_down(app: &mut AppState, x: i32, y: i32) -> Result<(), CoreError> {
+        let (fx, fy) = app.pixel.view.screen_to_canvas_raw(app.pixel.engine.store(), x as f32, y as f32);
+        let cx = fx.round() as i32;
+        let cy = fy.round() as i32;
+        let zoom = app.pixel.view.zoom_level as f32;
+        let world_x = (x as f32 - app.pixel.view.width / 2.0) / zoom + (app.pixel.engine.store().canvas_width as f32 / 2.0) - app.pixel.view.pan_x;
+        let world_y = (y as f32 - app.pixel.view.height / 2.0) / zoom + (app.pixel.engine.store().canvas_height as f32 / 2.0) - app.pixel.view.pan_y;
         if app.is_space_pressed { 
-            app.last_mouse_pos = Some((x, y));
+            app.last_mouse_pos = Some((x as i32, y as i32));
             return Ok(()); 
         }
         if app.mode == AppMode::Animation {
             app.pixel.engine.tool_manager_mut().is_drawing = true;
-            app.last_mouse_pos = Some((x, y));
+            app.last_mouse_pos = Some((x as i32, y as i32));
 
             app.anim.state.drag_start_skeleton = Some(app.anim.state.project.skeleton.clone());
             if let Some(id) = &app.anim.state.project.active_animation_id {
@@ -23,7 +27,7 @@ impl InputHandler {
                     app.anim.state.drag_start_animation = Some(anim.clone());
                 }
             }
-            let click_res = Self::handle_animation_click(app, cx, cy);
+            let click_res = Self::handle_animation_click(app, world_x, world_y);
             if let Some(tool) = app.pixel.engine.tool_manager_mut().tools.get_mut(&ToolType::CreateBone) {
                 if let Some(bone_tool) = tool.as_any_mut().downcast_mut::<crate::tools::create_bone::CreateBoneTool>() {
                     bone_tool.parent_bone_id = app.anim.selected_bone_id.clone();
@@ -47,7 +51,7 @@ impl InputHandler {
             return tool_manager.handle_pointer_down(cx, cy, store, symmetry);
         }
         let effect = app.pixel.engine.handle_input(InputEvent::PointerDown { x: cx, y: cy });
-        app.last_mouse_pos = Some((x, y));
+        app.last_mouse_pos = Some((x as i32, y as i32));
         let result = match &effect {
             EngineEffect::Error(e) => Err(e.clone()),
             _ => Ok(()),
@@ -57,13 +61,14 @@ impl InputHandler {
         result
     }
 
-    pub fn on_mouse_move(app: &mut AppState, x: u32, y: u32) -> Result<(), CoreError> {
+    pub fn on_mouse_move(app: &mut AppState, x: i32, y: i32) -> Result<(), CoreError> {
         let last_pos = app.last_mouse_pos.unwrap_or((x, y));
-        let dx = (x as i32).wrapping_sub(last_pos.0 as i32) as f32;
-        let dy = (y as i32).wrapping_sub(last_pos.1 as i32) as f32;
+        let dx = (x - last_pos.0) as f32;
+        let dy = (y - last_pos.1) as f32;
         app.last_mouse_pos = Some((x, y));
-        let (cx, cy) = app.pixel.view.screen_to_canvas(app.pixel.engine.store(), x as f32, y as f32)
-            .unwrap_or((x, y));
+        let (fx, fy) = app.pixel.view.screen_to_canvas_raw(app.pixel.engine.store(), x as f32, y as f32);
+        let cx = fx.round() as i32;
+        let cy = fy.round() as i32;
         if app.is_space_pressed { return Ok(()); }
         if app.mode == AppMode::Animation {
             if app.pixel.engine.tool_manager().active_type == ToolType::CreateBone {
@@ -203,13 +208,13 @@ impl InputHandler {
         result
     }
 
-    pub fn handle_animation_click(app: &mut AppState, cx: u32, cy: u32) -> Result<(), CoreError> {
+    pub fn handle_animation_click(app: &mut AppState, world_x: f32, world_y: f32) -> Result<(), CoreError> {
         let mut clicked_bone_id = None;
         for bone in &app.anim.state.project.skeleton.bones {
             let bx = bone.world_matrix[4];
             let by = bone.world_matrix[5];
-            let fx = cx as i32 as f32;
-            let fy = cy as i32 as f32;
+            let fx = world_x;
+            let fy = world_y;
             
             if ((fx - bx).powi(2) + (fy - by).powi(2)).sqrt() < 10.0 {
                 clicked_bone_id = Some(bone.data.id.clone());

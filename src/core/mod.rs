@@ -11,3 +11,4 @@ pub mod palette;
 pub mod selection;
 pub mod path;
 pub mod animation;
+pub mod pixelizer;

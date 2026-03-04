@@ -73,6 +73,13 @@ src/
         mod.rs
         palette.rs
         path.rs
+        pixelizer/
+            config.rs
+            downsample.rs
+            edge_selout.rs
+            mod.rs
+            pipeline.rs
+            quantize.rs
         selection.rs
         storage.rs
         store/
@@ -129,6 +136,10 @@ src/
         cursor_overlay.rs
         framework.rs
         gui.rs
+        import_modal/
+            mod.rs
+            state.rs
+            view.rs
         layer_panel.rs
         menu_file.rs
         menu_image.rs
@@ -151,6 +162,7 @@ tests/
     animation_undo_redo_tests.rs
     bone_and_animation_tests.rs
     bucket_tool_tests.rs
+    coordinate_sync_test.rs
     eyedropper_tests.rs
     integration_animation.rs
     integration_core.rs
@@ -161,6 +173,7 @@ tests/
     palette_tests.rs
     pen_tool_tests.rs
     pencil_eraser_tests.rs
+    pixelizer_tests.rs
     selection_tool_tests.rs
     spine_offset_fix_tests.rs
     stress_and_precision.rs

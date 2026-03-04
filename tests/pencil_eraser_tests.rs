@@ -26,8 +26,10 @@ fn test_eraser_functionality_and_history() {
     assert_eq!(store.get_pixel(&layer_id, 10, 10).unwrap().a, 0);
 
     app.undo();
+    app.process_commands();
     assert_eq!(app.pixel.engine.store().get_pixel(&layer_id, 10, 10).unwrap().r, 255);
     app.redo();
+    app.process_commands();
     assert_eq!(app.pixel.engine.store().get_pixel(&layer_id, 10, 10).unwrap().a, 0);
 }
 

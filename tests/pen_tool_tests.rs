@@ -20,6 +20,7 @@ fn setup_pen_test() -> AppState {
         layer.height = 100;
     }
     app.pixel.engine.set_primary_color(Color::new(255, 0, 0, 255));
+    app.pixel.view.update_viewport(100.0, 100.0);
     app
 }
 
@@ -38,8 +39,10 @@ fn test_pen_node_creation_and_history() {
     assert_eq!(app.pixel.engine.store().active_path.nodes[1].kind, NodeType::Smooth);
 
     app.undo();
+    app.process_commands();
     assert_eq!(app.pixel.engine.store().active_path.nodes.len(), 1);
     app.redo();
+    app.process_commands();
     assert_eq!(app.pixel.engine.store().active_path.nodes.len(), 2);
 }
 
@@ -157,6 +160,7 @@ fn test_pen_command_based_node_deletion() {
     assert_eq!(app.pixel.engine.store().active_path.nodes[1].anchor.x, 30.0, "剩余节点应前移");
 
     app.undo();
+    app.process_commands();
     assert_eq!(app.pixel.engine.store().active_path.nodes.len(), 3, "撤销应恢复被删除的节点");
 }
 
@@ -176,5 +180,6 @@ fn test_pen_fill_stroke_undo_redo() {
     assert_eq!(app.pixel.engine.store().get_pixel(&layer_id, 20, 10).unwrap().g, 255);
     
     app.undo();
+    app.process_commands();
     assert_eq!(app.pixel.engine.store().get_pixel(&layer_id, 20, 10).unwrap().a, 0, "钢笔描边应被正确撤销");
 }

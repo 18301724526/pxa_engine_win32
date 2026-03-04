@@ -117,7 +117,7 @@ impl PenTool {
 }
 
 impl Tool for PenTool {
-    fn on_pointer_down(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_down(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         self.snapshot = Some(store.active_path.clone());
 
         let fx = x as f32;
@@ -156,7 +156,7 @@ impl Tool for PenTool {
         Ok(())
     }
 
-    fn on_pointer_move(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_move(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         let mouse_pos = Vec2::new(x as f32, y as f32);
 
         match self.mode {

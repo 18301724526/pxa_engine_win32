@@ -6,7 +6,7 @@ use crate::core::selection::SelectionData;
 use crate::core::error::CoreError;
 
 pub struct EllipseSelectTool {
-    start_pos: Option<(u32, u32)>,
+    start_pos: Option<(i32, i32)>,
     old_selection: Option<SelectionData>,
     needs_redraw: bool,
 }
@@ -18,20 +18,22 @@ impl EllipseSelectTool {
 }
 
 impl Tool for EllipseSelectTool {
-    fn on_pointer_down(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_down(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         self.old_selection = Some(store.selection.clone());
         self.start_pos = Some((x, y));
-        store.selection.set_ellipse(x, y, 1, 1);
+        store.selection.set_ellipse(x.max(0) as u32, y.max(0) as u32, 1, 1);
         self.needs_redraw = true;
         Ok(())
     }
 
-    fn on_pointer_move(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_move(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         if let Some((sx, sy)) = self.start_pos {
-            let min_x = sx.min(x);
-            let min_y = sy.min(y);
-            let w = sx.max(x) - min_x + 1;
-            let h = sy.max(y) - min_y + 1;
+            let min_x = (sx as i32).min(x).max(0) as u32;
+            let min_y = (sy as i32).min(y).max(0) as u32;
+            let max_x = (sx as i32).max(x).max(0) as u32;
+            let max_y = (sy as i32).max(y).max(0) as u32;
+            let w = max_x - min_x + 1;
+            let h = max_y - min_y + 1;
             store.selection.set_ellipse(min_x, min_y, w, h);
             self.needs_redraw = true;
         }

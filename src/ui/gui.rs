@@ -9,6 +9,7 @@ use crate::ui::toolbar_pixel::ToolbarPixel;
 use crate::ui::toolbar_anim::ToolbarAnim;
 use rust_i18n::t;
 use crate::app::ui_context::UiContext;
+use crate::ui::import_modal::view::ImportModalView;
 
 pub struct Framework { pub gui: Gui }
 pub struct Gui { 
@@ -123,38 +124,29 @@ impl Gui {
             let response = ui.allocate_response(ui.available_size(), egui::Sense::click_and_drag());
             
             let scale = ctx.pixels_per_point();
-            let zoom = app.pixel.view.zoom_level as f32;
-            let s_cx = app.pixel.view.width / 2.0;
-            let s_cy = app.pixel.view.height / 2.0;
-            let c_cx = app.pixel.engine.store().canvas_width as f32 / 2.0;
-            let c_cy = app.pixel.engine.store().canvas_height as f32 / 2.0;
-            let pan_x = app.pixel.view.pan_x;
-            let pan_y = app.pixel.view.pan_y;
 
-            let get_canvas_pos = |pos: egui::Pos2| -> (u32, u32) {
+            let get_phys_pos = |pos: egui::Pos2| -> (i32, i32) {
                 let phys_x = pos.x * scale;
                 let phys_y = pos.y * scale;
-                let cx = (phys_x - s_cx) / zoom + c_cx - pan_x;
-                let cy = (phys_y - s_cy) / zoom + c_cy - pan_y;
-                (cx.floor() as i32 as u32, cy.floor() as i32 as u32)
+                (phys_x.round() as i32, phys_y.round() as i32)
             };
 
             if response.drag_started() {
                 if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                    let (cx, cy) = get_canvas_pos(pos);
-                    let _ = app.on_mouse_down(cx, cy);
+                    let (px, py) = get_phys_pos(pos);
+                    let _ = app.on_mouse_down(px, py);
                 }
             }
 
             if response.dragged() {
                 if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                    let (cx, cy) = get_canvas_pos(pos);
-                    let _ = app.on_mouse_move(cx, cy);
+                    let (px, py) = get_phys_pos(pos);
+                    let _ = app.on_mouse_move(px, py);
                 }
             } else if response.hovered() {
                 if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
-                    let (cx, cy) = get_canvas_pos(pos);
-                    let _ = app.on_mouse_move(cx, cy);
+                    let (px, py) = get_phys_pos(pos);
+                    let _ = app.on_mouse_move(px, py);
                 }
             }
 
@@ -164,7 +156,8 @@ impl Gui {
 
             if app.mode == AppMode::PixelEdit && response.secondary_clicked() {
                 if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                    let (cx, cy) = get_canvas_pos(pos);
+                    let (px, py) = get_phys_pos(pos);
+                    let (cx, cy) = app.pixel.view.screen_to_canvas_raw(app.pixel.engine.store(), px as f32, py as f32);
 
                     if app.pixel.engine.tool_manager().active_type == ToolType::Pen {
                         let tool = app.pixel.engine.tool_manager().tools.get(&ToolType::Pen).unwrap();
@@ -322,6 +315,35 @@ impl Gui {
                         }
                     });
                 });
+        }
+        if let Some(img) = app.pending_import_image.take() {
+            self.ui_ctx.import_modal.open_with_image(img);
+        }
+
+        // 渲染预览弹窗
+        if ImportModalView::show(ctx, &mut self.ui_ctx) {
+            let state = &mut self.ui_ctx.import_modal;
+            if let Some(pixelized_data) = state.cached_pixel_data.take() {
+                    let w = state.config.target_w;
+                    let h = state.config.target_h;
+                    let id = format!("layer_imp_{}", app.pixel.engine.id_gen().generate());
+                    let name = t!("layer.import_name", num = app.pixel.engine.store().layers.len() + 1).to_string();
+                    let mut layer = crate::core::layer::Layer::new(id.clone(), name, w, h);
+                    layer.set_rect_data(0, 0, w, h, &pixelized_data);
+                    
+                    let index = app.pixel.engine.store().layers.len();
+                    let old_active_id = app.pixel.engine.store().active_layer_id.clone();
+                    let patch = crate::history::patch::ActionPatch::new_layer_add(format!("patch_{}", id), id.clone(), layer, index, old_active_id);
+                    
+                    if let Err(e) = app.pixel.engine.commit_patch(patch) {
+                        app.command_bus.events.push_back(crate::app::command_handler::AppEvent::ShowError(e.to_string()));
+                    } else {
+                        app.pixel.engine.set_active_layer(id);
+                        app.is_dirty = true;
+                        app.pixel.view.needs_full_redraw = true;
+                        state.close();
+                }
+            }
         }
     }
 }

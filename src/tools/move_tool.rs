@@ -22,14 +22,14 @@ impl MoveTool {
 }
 
 impl Tool for MoveTool {
-    fn on_pointer_down(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_down(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         let layer_id = match &store.active_layer_id { Some(id) => id.clone(), None => return Ok(()) };
         let layer = match store.get_layer(&layer_id) { Some(l) => l, None => return Ok(()) };
         if layer.locked { return Err(CoreError::LayerLocked); }
 
         self.layer_backup = Some(layer.clone());
         self.sel_backup = Some(store.selection.clone());
-        self.start_pos = Some((x as i32, y as i32));
+        self.start_pos = Some((x, y));
         self.extracted_pixels.clear();
         if store.selection.is_active {
             let (w, h) = (layer.width, layer.height);
@@ -49,10 +49,10 @@ impl Tool for MoveTool {
         Ok(())
     }
 
-    fn on_pointer_move(&mut self, x: u32, y: u32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
+    fn on_pointer_move(&mut self, x: i32, y: i32, store: &mut PixelStore, _symmetry: &SymmetryConfig) -> Result<(), CoreError> {
         let (sx, sy) = match self.start_pos { Some(p) => p, None => return Ok(()) };
-        let dx = x as i32 - sx;
-        let dy = y as i32 - sy;
+        let dx = x - sx;
+        let dy = y - sy;
         if dx == 0 && dy == 0 { return Ok(()); }
 
         let layer_id = match store.active_layer_id.clone() { Some(id) => id, None => return Ok(()) };
